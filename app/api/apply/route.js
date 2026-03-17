@@ -1,5 +1,8 @@
 import { createServiceClient } from "@/lib/supabase";
+import { Resend } from "resend";
 import { NextResponse } from "next/server";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request) {
   try {
@@ -97,6 +100,35 @@ export async function POST(request) {
       console.error("Insert error:", error);
       return NextResponse.json({ error: "Failed to submit application." }, { status: 500 });
     }
+
+    // Send notification email to NCT Recycling
+    resend.emails.send({
+      from: "NCT Recycling Portal <noreply@nctrecycling.com>",
+      to: "donate@nctrecycling.com",
+      subject: `New Partner Application — ${full_name}${business_name ? ` (${business_name})` : ""}`,
+      html: `
+        <h2>New Partner Application Received</h2>
+        <table style="border-collapse:collapse;width:100%;max-width:600px">
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Name</td><td style="padding:6px 12px">${full_name}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Business</td><td style="padding:6px 12px">${business_name || "—"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Email</td><td style="padding:6px 12px">${email}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Phone</td><td style="padding:6px 12px">${phone || "—"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Program</td><td style="padding:6px 12px">${program_type}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Platforms</td><td style="padding:6px 12px">${platforms?.join(", ") || "—"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Visit Frequency</td><td style="padding:6px 12px">${visit_frequency || "—"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Expected Spend</td><td style="padding:6px 12px">${expected_spend || "—"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Categories</td><td style="padding:6px 12px">${categories?.join(", ") || "—"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Tax License #</td><td style="padding:6px 12px">${tax_license_number || "—"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">DR 0563</td><td style="padding:6px 12px">${dr0563_file_url ? "✅ Uploaded" : "Not provided"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Signed As</td><td style="padding:6px 12px">${contract_signed_name}</td></tr>
+        </table>
+        <p style="margin-top:20px">
+          <a href="https://www.nctrecycling.com/admin" style="background:#0b2a45;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;font-weight:bold">
+            Review in Admin Dashboard →
+          </a>
+        </p>
+      `,
+    }).catch((err) => console.error("Email send error:", err));
 
     return NextResponse.json({ success: true, id: data.id });
   } catch (err) {
