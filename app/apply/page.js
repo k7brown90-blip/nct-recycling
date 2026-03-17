@@ -370,11 +370,11 @@ export default function ApplyPage() {
                   Website / Shop URL (optional)
                 </label>
                 <input
-                  type="url"
+                  type="text"
                   name="website"
                   value={form.website}
                   onChange={handleChange}
-                  placeholder="https://"
+                  placeholder="www.yourshop.com"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 />
               </div>
