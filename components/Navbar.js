@@ -92,6 +92,13 @@ export default function Navbar() {
           </div>
 
           <Link
+            href="/login"
+            className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors border border-white/30 px-3 py-2 rounded"
+          >
+            Login
+          </Link>
+
+          <Link
             href="/donate"
             className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded transition-colors"
           >
@@ -141,6 +148,13 @@ export default function Navbar() {
               Nonprofit Application
             </Link>
           </div>
+          <Link
+            href="/login"
+            className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors border border-white/30 px-3 py-2 rounded text-center"
+            onClick={() => setMenuOpen(false)}
+          >
+            Login
+          </Link>
           <Link
             href="/donate"
             className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded text-center transition-colors"

@@ -29,7 +29,7 @@ export async function POST(request) {
     email,
     {
       redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
-      data: { role, application_id },
+      data: { role, application_id, setup_required: true },
     }
   );
 

@@ -25,8 +25,8 @@ export async function middleware(request) {
 
   const { pathname } = request.nextUrl;
 
-  // Protect reseller and nonprofit dashboard routes
-  if (pathname.startsWith("/reseller") || pathname.startsWith("/nonprofit/dashboard")) {
+  // Protect reseller, nonprofit, and account routes
+  if (pathname.startsWith("/reseller") || pathname.startsWith("/nonprofit/dashboard") || pathname.startsWith("/account")) {
     if (!user) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = "/login";
@@ -45,5 +45,5 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/login", "/dashboard", "/reseller/:path*", "/nonprofit/dashboard/:path*"],
+  matcher: ["/login", "/dashboard", "/reseller/:path*", "/nonprofit/dashboard/:path*", "/account/:path*"],
 };

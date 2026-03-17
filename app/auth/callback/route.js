@@ -1,4 +1,3 @@
-import { createServiceClient } from "@/lib/supabase";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -24,7 +23,12 @@ export async function GET(request) {
       }
     );
 
-    await supabase.auth.exchangeCodeForSession(code);
+    const { data } = await supabase.auth.exchangeCodeForSession(code);
+
+    // First-time invite: send to password setup page
+    if (data?.user?.user_metadata?.setup_required) {
+      return NextResponse.redirect(`${origin}/auth/update-password?welcome=true`);
+    }
   }
 
   return NextResponse.redirect(`${origin}/dashboard`);

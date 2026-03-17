@@ -25,7 +25,7 @@ Partner agrees to: provide donated textiles to NCT Recycling at no cost; meet pi
 4. EXCHANGE PROGRAM
 Approved Partners may source inventory from NCT Recycling through the Exchange Program. Two scheduling options are available:
   (a) In-Person — Bins Visit: Partner sends up to 2 designated volunteers to NCT Recycling's Bins Area during available shopping days. Bins are restocked from incoming loads and available 12:00 PM – 4:00 PM on scheduled shopping days. Partner schedules visits through the Partner Portal; visits are subject to availability (maximum 2 nonprofit volunteer spots per shopping day).
-  (b) Delivery: NCT Recycling curates a textile lot and delivers or ships it to Partner. Partner fundraises to cover NCT Recycling's actual labor and delivery costs, passed through at cost with no markup. Delivery scheduling is managed through the Partner Portal.
+  (b) Delivery: NCT Recycling curates a textile lot and delivers or ships it to Partner. The inventory is provided at no charge; Partner is responsible for covering NCT Recycling's actual labor (sorting and curation) and delivery costs, passed through at cost with no markup. Delivery scheduling is managed through the Partner Portal.
 Partner acknowledges that shopping day availability is dependent on NCT Recycling's pickup route schedule and is not guaranteed on any specific day.
 
 5. PICKUP MINIMUMS
