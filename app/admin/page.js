@@ -48,6 +48,38 @@ export default function AdminPage() {
     }
   }
 
+  async function handleApproveAndInvite() {
+    if (!selected) return;
+    setActionLoading(true);
+    setMessage("");
+
+    // Send invite email via Supabase Auth
+    const inviteRes = await fetch("/api/admin/invite", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify({
+        application_id: selected.id,
+        email: selected.email,
+        full_name: selected.full_name,
+        role: "reseller",
+      }),
+    });
+
+    const inviteJson = await inviteRes.json();
+    if (!inviteRes.ok) {
+      setMessage(`Error: ${inviteJson.error}`);
+    } else {
+      setMessage(`✅ Approved and invite sent to ${selected.email}`);
+      setSelected(null);
+      setNotes("");
+      fetchApplications();
+    }
+    setActionLoading(false);
+  }
+
   async function handleAction(status) {
     if (!selected) return;
     setActionLoading(true);
@@ -245,11 +277,11 @@ export default function AdminPage() {
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleAction("approved")}
+                  onClick={() => handleApproveAndInvite()}
                   disabled={actionLoading || selected.status === "approved"}
                   className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40"
                 >
-                  Approve
+                  ✅ Approve & Invite
                 </button>
                 <button
                   onClick={() => handleAction("denied")}
