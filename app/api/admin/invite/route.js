@@ -26,19 +26,37 @@ export async function POST(request) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  // Generate the invite link without sending Supabase's default email
-  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/update-password?welcome=true`;
+
+  // Try to generate an invite link first
+  let linkData;
+  let { data: inviteLinkData, error: inviteError } = await adminClient.auth.admin.generateLink({
     type: "invite",
     email,
-    options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/update-password?welcome=true`,
-      data: { role, application_id, setup_required: true },
-    },
+    options: { redirectTo, data: { role, application_id, setup_required: true } },
   });
 
-  if (linkError) {
-    console.error("Invite link error:", linkError);
-    return NextResponse.json({ error: linkError.message }, { status: 500 });
+  if (inviteError) {
+    // User already exists in auth — generate a recovery link instead
+    const { data: recoveryData, error: recoveryError } = await adminClient.auth.admin.generateLink({
+      type: "recovery",
+      email,
+      options: { redirectTo },
+    });
+
+    if (recoveryError) {
+      console.error("Link generation error:", recoveryError);
+      return NextResponse.json({ error: recoveryError.message }, { status: 500 });
+    }
+
+    // Update their metadata to ensure role/setup flag are set
+    await adminClient.auth.admin.updateUserById(recoveryData.user.id, {
+      user_metadata: { role, application_id, setup_required: true },
+    });
+
+    linkData = recoveryData;
+  } else {
+    linkData = inviteLinkData;
   }
 
   const db = createServiceClient();
