@@ -100,7 +100,7 @@ export default function Navbar() {
 
           <Link
             href="/donate"
-            className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded transition-colors"
+            className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded transition-colors whitespace-nowrap"
           >
             Donate Now
           </Link>
