@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import Link from "next/link";
 
 const CATEGORIES = [
   "Women's Clothing", "Men's Clothing", "Kids' Clothing",
@@ -23,17 +22,20 @@ The NCT Recycling Co-Op Network connects organizations through a coordinated sys
 3. ROLE OF PARTICIPATING ORGANIZATIONS
 Partner agrees to: provide donated textiles to NCT Recycling at no cost; meet pickup minimums (1,000 lbs minimum per scheduled pickup); coordinate staff or volunteers for on-site selection when applicable; communicate categories of need; and participate in good faith.
 
-4. WAREHOUSE ACCESS — ON-SITE PARTNERS
-On-site Partners may send designated staff or volunteers to NCT Recycling's warehouse Bins Area on Mondays only, by appointment. Access to other areas requires separate written authorization.
+4. EXCHANGE PROGRAM
+Approved Partners may source inventory from NCT Recycling through the Exchange Program. Two scheduling options are available:
+  (a) In-Person: Partner sends designated staff or volunteers to NCT Recycling's warehouse to curate and select items. Partner expends the labor; NCT Recycling provides facility access by appointment.
+  (b) Delivery: NCT Recycling curates a textile lot and delivers or ships it to Partner. Partner fundraises to cover NCT Recycling's actual labor and delivery costs, passed through at cost with no markup.
+Scheduling is managed through the Partner Portal. All exchange appointments require prior approval and are subject to NCT Recycling's calendar availability.
 
-5. REMOTE PARTNER — CHARITY DRIVE PROGRAM
-Remote Partners may participate through the Charity Drive Program: Partner identifies a charitable drive or cause → NCT Recycling curates a textile lot → Partner fundraises to cover NCT Recycling's actual labor and shipping costs (passed through at cost, no markup) → NCT Recycling ships the curated lot. A written cost estimate is provided before any load is prepared.
-
-6. PICKUP MINIMUMS
+5. PICKUP MINIMUMS
 Minimum 1,000 lbs of donated textiles required per scheduled pickup. Loads under 4,000 lbs must be scheduled within an existing NCT route. Loads 4,000 lbs or more may be scheduled independently.
 
-7. VALUE EXCHANGE
+6. VALUE EXCHANGE
 Partner provides donated textiles at no cost. In exchange, Partner receives warehouse sourcing access, logistics coordination, and community visibility. NCT Recycling donates textile inventory to Partner at no charge, valued at $5.00 per piece for tax receipt purposes. Partner agrees to issue NCT Recycling a written tax donation receipt for each lot received and upload it to their partner portal within 30 days.
+
+7. BAG COUNT REPORTING
+Partner agrees to maintain an accurate bag count in their partner portal, updating it whenever their stored donation volume changes. This information is used to plan NCT Recycling pickup routes. Failure to keep bag counts current may result in missed or delayed pickups.
 
 8. 501(c)(3) VERIFICATION
 Participation is limited to organizations with verified 501(c)(3) status. Partner must provide an IRS determination letter upon application and notify NCT Recycling of any change in tax-exempt status.
@@ -45,7 +47,7 @@ Partner, on behalf of itself and all staff and volunteers it sends to the facili
 Partner agrees to indemnify, defend, and hold harmless NCT Recycling from any claims, damages, losses, costs, and expenses arising from: any act or negligence of Partner's staff or volunteers on the premises; Partner's violation of this Agreement; any third-party claims from Partner's use or distribution of materials received through the co-op; and any injury to Partner's staff, volunteers, or guests on the premises.
 
 11. WAREHOUSE RULES
-All visitors must check in with staff upon arrival. Closed-toe shoes required. No smoking or vaping. Children must be supervised. Access restricted to Bins Area unless authorized. Forklift safety: when bale movement is announced, all persons must stop and remain in place until forklift is parked and engine off.
+All visitors must check in with staff upon arrival. Closed-toe shoes required. No smoking or vaping. Children must be supervised. Access restricted to approved areas unless authorized in writing. Forklift safety: when bale movement is announced, all persons must stop and remain in place until forklift is parked and engine off.
 
 12. TERM AND TERMINATION
 Participation may be terminated by either party with 60 days written notice.
@@ -63,9 +65,7 @@ export default function NonprofitApplyPage() {
     contact_name: "", contact_title: "", email: "", phone: "", website: "",
     address_street: "", address_city: "", address_state: "", address_zip: "",
     pickup_address: "", dock_instructions: "", available_pickup_hours: "", pickup_notes: "",
-    program_type: "onsite",
     estimated_donation_lbs: "", categories_needed: [],
-    onsite_contact: "", charity_drive_description: "",
     feature_consent: false, irs_letter: null,
     contract_agreed: false, contract_signed_name: "", authorized_title: "",
   });
@@ -140,9 +140,6 @@ export default function NonprofitApplyPage() {
     }
   }
 
-  const needsOnsite = form.program_type === "onsite" || form.program_type === "both";
-  const needsRemote = form.program_type === "remote" || form.program_type === "both";
-
   if (step === 3) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-16 text-center">
@@ -154,7 +151,8 @@ export default function NonprofitApplyPage() {
           <strong>{form.email}</strong>.
         </p>
         <p className="text-gray-500 text-sm">
-          Once approved, you'll receive an email invitation to set up your partner portal account.
+          Once approved, you'll receive an email invitation to set up your partner portal account,
+          where you can schedule exchange appointments and manage your bag count.
         </p>
       </main>
     );
@@ -246,36 +244,12 @@ export default function NonprofitApplyPage() {
     <main className="max-w-3xl mx-auto px-4 py-12">
       <h1 className="text-3xl font-bold text-nct-navy mb-2">Nonprofit Co-Op Application</h1>
       <p className="text-gray-600 mb-8">
-        Apply to join the NCT Recycling Co-Op Network. All applications are reviewed before access
-        is granted. Participation requires verified 501(c)(3) status.
+        Apply to join the NCT Recycling Exchange Program. Once approved, you'll schedule
+        sourcing appointments and manage your donation bag count through your partner portal.
+        Participation requires verified 501(c)(3) status.
       </p>
 
       <form onSubmit={(e) => { e.preventDefault(); handleNext(); }} className="space-y-8">
-
-        {/* Program Type */}
-        <section>
-          <h2 className="text-lg font-bold text-nct-navy border-b border-gray-200 pb-2 mb-4">
-            Participation Type *
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[
-              { val: "onsite", label: "On-Site Partner", desc: "Visit our warehouse Mondays to select inventory" },
-              { val: "remote", label: "Remote / Charity Drive", desc: "We curate & ship loads for your fundraisers" },
-              { val: "both", label: "Both", desc: "On-site access + charity drive program" },
-            ].map(({ val, label, desc }) => (
-              <label
-                key={val}
-                className={`flex flex-col gap-1 border-2 rounded-lg p-4 cursor-pointer transition-colors ${
-                  form.program_type === val ? "border-nct-gold bg-yellow-50" : "border-gray-200 hover:border-gray-400"
-                }`}
-              >
-                <input type="radio" name="program_type" value={val} checked={form.program_type === val} onChange={handleChange} className="sr-only" />
-                <span className="font-semibold text-nct-navy">{label}</span>
-                <span className="text-xs text-gray-600">{desc}</span>
-              </label>
-            ))}
-          </div>
-        </section>
 
         {/* Organization Info */}
         <section>
@@ -402,54 +376,23 @@ export default function NonprofitApplyPage() {
           </div>
         </section>
 
-        {/* On-site details */}
-        {needsOnsite && (
-          <section>
-            <h2 className="text-lg font-bold text-nct-navy border-b border-gray-200 pb-2 mb-4">
-              On-Site Warehouse Access
-            </h2>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm text-blue-800">
-              On-site partners may send staff or volunteers to our warehouse <strong>Mondays only</strong>, by appointment, to select from the Bins Area.
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Who will visit the warehouse? (name and title)
+        {/* Categories */}
+        <section>
+          <h2 className="text-lg font-bold text-nct-navy border-b border-gray-200 pb-2 mb-4">
+            Clothing Categories Needed
+          </h2>
+          <p className="text-sm text-gray-600 mb-3">
+            What types of clothing does your organization typically need for the clients you serve?
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {CATEGORIES.map((c) => (
+              <label key={c} className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="categories_needed" value={c} checked={form.categories_needed.includes(c)} onChange={handleChange} className="accent-nct-gold" />
+                <span className="text-sm">{c}</span>
               </label>
-              <input type="text" name="onsite_contact" value={form.onsite_contact} onChange={handleChange} placeholder="e.g. Jane Smith, Program Coordinator" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-            </div>
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Categories of Clothing Needed (check all that apply)
-              </label>
-              <div className="flex flex-wrap gap-3">
-                {CATEGORIES.map((c) => (
-                  <label key={c} className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" name="categories_needed" value={c} checked={form.categories_needed.includes(c)} onChange={handleChange} className="accent-nct-gold" />
-                    <span className="text-sm">{c}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Remote / Charity Drive */}
-        {needsRemote && (
-          <section>
-            <h2 className="text-lg font-bold text-nct-navy border-b border-gray-200 pb-2 mb-4">
-              Charity Drive Program
-            </h2>
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-800">
-              Tell us about the drives or fundraisers you run. NCT Recycling will curate textile lots to support them. Your organization covers NCT's actual labor and shipping costs, which you can raise through your fundraiser.
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Describe your charity drives or fundraisers
-              </label>
-              <textarea name="charity_drive_description" value={form.charity_drive_description} onChange={handleChange} rows={4} placeholder="e.g. We run quarterly clothing drives for families in need, annual winter coat fundraisers, etc." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-            </div>
-          </section>
-        )}
+            ))}
+          </div>
+        </section>
 
         {/* Feature consent */}
         <section>
@@ -459,7 +402,9 @@ export default function NonprofitApplyPage() {
           <label className="flex items-start gap-3 cursor-pointer">
             <input type="checkbox" name="feature_consent" checked={form.feature_consent} onChange={handleChange} className="mt-1 accent-nct-gold" />
             <span className="text-sm text-gray-700">
-              I consent to NCT Recycling featuring our organization's name and/or website on the NCT Recycling website, social media, and marketing materials as a co-op partner. This consent may be revoked at any time by emailing donate@nctrecycling.com.
+              I consent to NCT Recycling featuring our organization's name and/or website on the NCT Recycling
+              website, social media, and marketing materials as a co-op partner. This consent may be revoked
+              at any time by emailing donate@nctrecycling.com.
             </span>
           </label>
         </section>

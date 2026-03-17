@@ -24,11 +24,8 @@ export async function POST(request) {
     const dock_instructions = formData.get("dock_instructions")?.trim();
     const available_pickup_hours = formData.get("available_pickup_hours")?.trim();
     const pickup_notes = formData.get("pickup_notes")?.trim();
-    const program_type = formData.get("program_type");
     const estimated_donation_lbs = formData.get("estimated_donation_lbs")?.trim();
     const categories_needed = formData.getAll("categories_needed");
-    const onsite_contact = formData.get("onsite_contact")?.trim();
-    const charity_drive_description = formData.get("charity_drive_description")?.trim();
     const feature_consent = formData.get("feature_consent") === "true";
     const contract_agreed = formData.get("contract_agreed") === "true";
     const contract_signed_name = formData.get("contract_signed_name")?.trim();
@@ -37,10 +34,6 @@ export async function POST(request) {
 
     if (!org_name || !contact_name || !email || !contract_agreed || !contract_signed_name) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
-    }
-
-    if (!["onsite", "remote", "both"].includes(program_type)) {
-      return NextResponse.json({ error: "Invalid program type." }, { status: 400 });
     }
 
     const supabase = createServiceClient();
@@ -78,9 +71,8 @@ export async function POST(request) {
         contact_name, contact_title, email, phone, website,
         address_street, address_city, address_state, address_zip,
         pickup_address, dock_instructions, available_pickup_hours, pickup_notes,
-        program_type, estimated_donation_lbs,
+        estimated_donation_lbs,
         categories_needed: categories_needed.length ? categories_needed : null,
-        onsite_contact, charity_drive_description,
         feature_consent, contract_agreed,
         contract_agreed_at: new Date().toISOString(),
         contract_signed_name, authorized_title,
@@ -107,7 +99,6 @@ export async function POST(request) {
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Email</td><td style="padding:6px 12px">${email}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Phone</td><td style="padding:6px 12px">${phone || "—"}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">EIN</td><td style="padding:6px 12px">${ein || "—"}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Program Type</td><td style="padding:6px 12px">${program_type}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Est. Monthly Donations</td><td style="padding:6px 12px">${estimated_donation_lbs || "—"}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">IRS Letter</td><td style="padding:6px 12px">${irs_letter_url ? "✅ Uploaded" : "Not provided"}</td></tr>
         </table>
