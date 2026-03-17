@@ -12,7 +12,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts"];
+const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days"];
 
 export default function AdminPage() {
   const [secret, setSecret] = useState("");
@@ -50,6 +50,10 @@ export default function AdminPage() {
   const [apptTime, setApptTime] = useState("");
   const [apptAdminNotes, setApptAdminNotes] = useState("");
   const [apptLoading, setApptLoading] = useState(false);
+
+  // Shopping days state
+  const [shoppingDays, setShoppingDays] = useState([]);
+  const [shoppingFilter, setShoppingFilter] = useState("upcoming");
 
   const isNonprofit = section === "Nonprofit Apps";
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
@@ -89,6 +93,15 @@ export default function AdminPage() {
     setLoading(false);
   }, [secret, apptFilter]);
 
+  const fetchShoppingDays = useCallback(async () => {
+    setLoading(true);
+    const upcoming = shoppingFilter === "upcoming";
+    const res = await fetch(`/api/admin/shopping-days?upcoming=${upcoming}`, { headers: authHeader });
+    const json = await res.json();
+    setShoppingDays(json.days || []);
+    setLoading(false);
+  }, [secret, shoppingFilter]);
+
   useEffect(() => {
     if (!authed) return;
     setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
@@ -96,7 +109,8 @@ export default function AdminPage() {
     if (section === "Bag Levels") fetchBagLevels();
     if (section === "Routes") fetchRoutes();
     if (section === "Exchange Appts") fetchAppointments();
-  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments]);
+    if (section === "Shopping Days") fetchShoppingDays();
+  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays]);
 
   async function handleAuth(e) {
     e.preventDefault();
@@ -635,6 +649,155 @@ export default function AdminPage() {
                   {apptLoading ? "Scheduling…" : "Confirm & Notify Nonprofit"}
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== SHOPPING DAYS ===== */}
+      {section === "Shopping Days" && (
+        <div>
+          <div className="flex gap-2 mb-4 items-center">
+            {[["upcoming", "Upcoming"], ["all", "All"]].map(([val, label]) => (
+              <button key={val} onClick={() => setShoppingFilter(val)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  shoppingFilter === val ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <button onClick={fetchShoppingDays} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻</button>
+          </div>
+
+          {loading ? <p className="text-gray-500 text-sm">Loading…</p>
+           : shoppingDays.length === 0 ? <p className="text-gray-500 text-sm">No shopping days found.</p>
+           : (
+            <div className="space-y-6">
+              {shoppingDays.map((day) => {
+                const dateStr = new Date(day.shopping_date).toLocaleDateString("en-US", {
+                  weekday: "long", month: "long", day: "numeric", year: "numeric",
+                });
+                const pickupDateStr = day.pickup_routes?.scheduled_date
+                  ? new Date(day.pickup_routes.scheduled_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                  : null;
+
+                return (
+                  <div key={day.id} className="border border-gray-200 rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="font-bold text-nct-navy text-lg">{dateStr}</h3>
+                        {pickupDateStr && (
+                          <p className="text-xs text-gray-400">Pickup route: {pickupDateStr}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[day.status] || "bg-gray-100 text-gray-600"}`}>
+                          {day.status}
+                        </span>
+                        {day.status === "open" && (
+                          <button
+                            onClick={async () => {
+                              await fetch("/api/admin/shopping-days", {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json", ...authHeader },
+                                body: JSON.stringify({ id: day.id, status: "closed" }),
+                              });
+                              fetchShoppingDays();
+                            }}
+                            className="text-xs text-gray-500 underline"
+                          >
+                            Close
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {/* Wholesale slot */}
+                      <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-bold text-nct-navy">Wholesale</p>
+                            <p className="text-xs text-gray-500">10:00 AM – 12:00 PM · $0.30/lb</p>
+                          </div>
+                          <span className="text-sm font-bold text-nct-navy">
+                            {day.slots.wholesale.booked}/{day.slots.wholesale.capacity}
+                          </span>
+                        </div>
+                        {day.slots.wholesale.bookings.length === 0 ? (
+                          <p className="text-xs text-gray-400">No bookings yet.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {day.slots.wholesale.bookings.map((b) => (
+                              <div key={b.id} className="text-sm">
+                                <span className="font-medium">{b.reseller_applications?.full_name}</span>
+                                {b.reseller_applications?.business_name && (
+                                  <span className="text-gray-400 ml-1">({b.reseller_applications.business_name})</span>
+                                )}
+                                <span className="text-gray-400 ml-2 text-xs">{b.reseller_applications?.email}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bins slot */}
+                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-bold text-nct-navy">Bins</p>
+                            <p className="text-xs text-gray-500">12:00 PM – 4:00 PM · $2.00/lb</p>
+                          </div>
+                          <span className="text-sm font-bold text-nct-navy">
+                            {day.slots.bins.booked}/{day.slots.bins.capacity}
+                          </span>
+                        </div>
+                        {day.slots.bins.bookings.length === 0 ? (
+                          <p className="text-xs text-gray-400">No bookings yet.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {day.slots.bins.bookings.map((b) => (
+                              <div key={b.id} className="text-sm">
+                                <span className="font-medium">{b.reseller_applications?.full_name}</span>
+                                {b.reseller_applications?.business_name && (
+                                  <span className="text-gray-400 ml-1">({b.reseller_applications.business_name})</span>
+                                )}
+                                <span className="text-gray-400 ml-2 text-xs">{b.reseller_applications?.email}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Nonprofit bins slot */}
+                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-bold text-nct-navy">Nonprofit Bins</p>
+                            <p className="text-xs text-gray-500">12:00 PM – 4:00 PM · 2 volunteer spots</p>
+                          </div>
+                          <span className="text-sm font-bold text-nct-navy">
+                            {day.slots.nonprofit_bins.booked}/{day.slots.nonprofit_bins.capacity}
+                          </span>
+                        </div>
+                        {day.slots.nonprofit_bins.bookings.length === 0 ? (
+                          <p className="text-xs text-gray-400">No bookings yet.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {day.slots.nonprofit_bins.bookings.map((b) => (
+                              <div key={b.id} className="text-sm">
+                                <span className="font-medium">{b.nonprofit_applications?.org_name}</span>
+                                <span className="text-gray-400 ml-2 text-xs">{b.nonprofit_applications?.email}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

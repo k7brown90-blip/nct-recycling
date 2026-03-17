@@ -102,6 +102,13 @@ export async function POST(request) {
 
   await db.from("pickup_route_stops").insert(stopRows);
 
+  // Auto-create shopping day (day after pickup)
+  await db.from("shopping_days").insert({
+    route_id: route.id,
+    shopping_date: shopping_date,
+    status: "open",
+  });
+
   // Fetch nonprofit details for notification
   const nonprofitIds = stops.map((s) => s.nonprofit_id);
   const { data: nonprofits } = await db

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import SignOutButton from "@/components/SignOutButton";
 import BagCountForm from "@/components/BagCountForm";
 import AppointmentRequestForm from "@/components/AppointmentRequestForm";
+import NonprofitBinsBooker from "@/components/NonprofitBinsBooker";
 
 export const metadata = { title: "Nonprofit Partner Portal" };
 
@@ -95,6 +96,16 @@ export default async function NonprofitDashboard() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Nonprofit bins booking */}
+      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
+        <h2 className="font-bold text-nct-navy text-lg mb-1">Schedule a Bins Visit</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Book a bins sourcing visit for up to 2 volunteers. Available 12:00 PM – 4:00 PM on shopping days.
+          Bins are restocked fresh each shopping day from incoming loads.
+        </p>
+        <NonprofitBinsBooker />
       </div>
 
       {/* Exchange appointment scheduler */}
