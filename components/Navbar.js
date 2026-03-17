@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 
 const navLinks = [
@@ -20,9 +21,18 @@ export default function Navbar() {
     <nav className="bg-nct-navy text-white sticky top-0 z-50 shadow-lg">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex flex-col leading-tight">
-          <span className="text-xl font-bold tracking-wide text-white">NCT Recycling</span>
-          <span className="text-xs text-nct-gold font-medium tracking-widest uppercase">Fort Collins, CO</span>
+        <Link href="/" className="flex items-center gap-3">
+          <Image
+            src="/images/nct-logo.png"
+            alt="NCT Recycling"
+            width={48}
+            height={48}
+            className="rounded"
+          />
+          <div className="flex flex-col leading-tight">
+            <span className="text-xl font-bold tracking-wide text-white">NCT Recycling</span>
+            <span className="text-xs text-nct-gold font-medium tracking-widest uppercase">Fort Collins, CO</span>
+          </div>
         </Link>
 
         {/* Desktop nav */}
