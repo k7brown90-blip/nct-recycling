@@ -245,7 +245,7 @@ export default function ApplyPage() {
   // Step 1 — Info form
   return (
     <main className="max-w-3xl mx-auto px-4 py-12">
-      <h1 className="text-3xl font-bold text-nct-navy mb-2">Partner Application</h1>
+      <h1 className="text-3xl font-bold text-nct-navy mb-2">Reseller Application</h1>
       <p className="text-gray-600 mb-8">
         Apply to access NCT Recycling's warehouse sourcing program. All applications are reviewed
         before access is granted.
