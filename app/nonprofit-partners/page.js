@@ -98,6 +98,14 @@ export default function PartnersPage() {
             The result: excess donations flow where they're actually needed, organizations
             spend less time managing overflow, and your clients get more of what they need.
           </p>
+          <div className="text-center mt-8">
+            <Link
+              href="/nonprofit-apply"
+              className="inline-block bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-8 py-3 rounded transition-colors text-lg"
+            >
+              Apply to Join the Co-op →
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -180,22 +188,29 @@ export default function PartnersPage() {
       {/* CTA */}
       <section className="text-center bg-nct-navy text-white rounded-xl p-10">
         <h2 className="text-2xl font-bold mb-4">Ready to Join the Co-op?</h2>
-        <p className="text-gray-300 mb-8 max-w-xl mx-auto">
-          Reach out to start the conversation. We'll learn about your organization's needs
-          and talk through how the co-op exchange can work for you.
+        <div className="mt-2 mb-6">
+          <Link
+            href="/nonprofit-apply"
+            className="inline-block bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-8 py-3 rounded transition-colors text-lg"
+          >
+            Apply Now →
+          </Link>
+        </div>
+        <p className="text-gray-300 mb-6 max-w-xl mx-auto text-sm">
+          Questions before applying? Reach out directly and we'll walk you through the process.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <a
             href="mailto:donate@nctrecycling.com"
-            className="bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-6 py-3 rounded transition-colors"
+            className="border border-white/40 text-gray-300 hover:text-white font-medium px-5 py-2 rounded transition-colors text-sm"
           >
-            Email donate@nctrecycling.com
+            donate@nctrecycling.com
           </a>
           <a
             href="tel:+19702329108"
-            className="border-2 border-white text-white hover:bg-white hover:text-nct-navy font-bold px-6 py-3 rounded transition-colors"
+            className="border border-white/40 text-gray-300 hover:text-white font-medium px-5 py-2 rounded transition-colors text-sm"
           >
-            Call (970) 232-9108
+            (970) 232-9108
           </a>
         </div>
       </section>

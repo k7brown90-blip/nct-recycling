@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const navLinks = [
   { href: "/shop", label: "Shop" },
@@ -11,12 +11,22 @@ const navLinks = [
   { href: "/community-partners", label: "Our Partners" },
   { href: "/wholesale", label: "Wholesale" },
   { href: "/contact", label: "Contact" },
-  { href: "/apply", label: "Reseller Apply" },
-  { href: "/nonprofit-apply", label: "Nonprofit Apply" },
 ];
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const applyRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (applyRef.current && !applyRef.current.contains(e.target)) {
+        setApplyOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   return (
     <nav className="bg-nct-navy text-white sticky top-0 z-50 shadow-lg">
@@ -49,6 +59,38 @@ export default function Navbar() {
               {link.label}
             </Link>
           ))}
+
+          {/* Apply dropdown */}
+          <div className="relative" ref={applyRef}>
+            <button
+              onClick={() => setApplyOpen((v) => !v)}
+              className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors flex items-center gap-1"
+            >
+              Apply
+              <svg className={`w-3 h-3 transition-transform ${applyOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {applyOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50">
+                <Link
+                  href="/apply"
+                  onClick={() => setApplyOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-nct-navy"
+                >
+                  Reseller Application
+                </Link>
+                <Link
+                  href="/nonprofit-apply"
+                  onClick={() => setApplyOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-nct-navy"
+                >
+                  Nonprofit Application
+                </Link>
+              </div>
+            )}
+          </div>
+
           <Link
             href="/donate"
             className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded transition-colors"
@@ -82,6 +124,23 @@ export default function Navbar() {
               {link.label}
             </Link>
           ))}
+          <div className="border-t border-white/10 pt-3 flex flex-col gap-2">
+            <p className="text-xs text-gray-400 uppercase tracking-widest font-medium">Apply</p>
+            <Link
+              href="/apply"
+              className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              Reseller Application
+            </Link>
+            <Link
+              href="/nonprofit-apply"
+              className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              Nonprofit Application
+            </Link>
+          </div>
           <Link
             href="/donate"
             className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded text-center transition-colors"

@@ -56,6 +56,14 @@ export default function RetailPartnersPage() {
           opportunity to claim it — sort on-site at our Fort Collins facility and take
           everything they pull. Their discards feed our bins. Nothing goes to waste.
         </p>
+        <div className="mt-8">
+          <Link
+            href="/apply"
+            className="inline-block bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-8 py-3 rounded transition-colors text-lg"
+          >
+            Apply to Become a Retail Partner →
+          </Link>
+        </div>
       </div>
 
       {/* What is an ad hoc load */}
@@ -174,22 +182,30 @@ export default function RetailPartnersPage() {
       {/* CTA */}
       <div className="bg-nct-navy text-white rounded-xl p-10 text-center">
         <h2 className="text-2xl font-bold mb-4">Apply to Become a Retail Partner</h2>
-        <p className="text-gray-300 mb-8 max-w-lg mx-auto">
-          Retail partnerships are approved on a case-by-case basis. Contact us to introduce
-          your business and learn when the next ad hoc load opportunity becomes available.
+        <div className="mt-2 mb-6">
+          <Link
+            href="/apply"
+            className="inline-block bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-8 py-3 rounded transition-colors text-lg"
+          >
+            Apply Now →
+          </Link>
+        </div>
+        <p className="text-gray-300 mb-6 max-w-lg mx-auto text-sm">
+          Retail partnerships are approved on a case-by-case basis. Questions before applying?
+          Reach out directly.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <a
             href="mailto:donate@nctrecycling.com"
-            className="bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-6 py-3 rounded transition-colors"
+            className="border border-white/40 text-gray-300 hover:text-white font-medium px-5 py-2 rounded transition-colors text-sm"
           >
-            Email donate@nctrecycling.com
+            donate@nctrecycling.com
           </a>
           <a
             href="tel:+19702329108"
-            className="border-2 border-white text-white hover:bg-white hover:text-nct-navy font-bold px-6 py-3 rounded transition-colors"
+            className="border border-white/40 text-gray-300 hover:text-white font-medium px-5 py-2 rounded transition-colors text-sm"
           >
-            Call (970) 232-9108
+            (970) 232-9108
           </a>
         </div>
         <p className="text-gray-400 text-xs mt-6">
