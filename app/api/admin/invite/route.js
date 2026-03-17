@@ -79,7 +79,7 @@ export async function POST(request) {
 
   // Send branded invite email via Resend
   const { error: emailError } = await resend.emails.send({
-    from: "NCT Recycling <donate@nctrecycling.com>",
+    from: "NCT Recycling <noreply@nctrecycling.com>",
     to: email,
     subject: "You've been approved — Set up your NCT Recycling partner account",
     html: `
