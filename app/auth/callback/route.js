@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 export async function GET(request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
+  const next = searchParams.get("next") || "/dashboard";
 
   if (code) {
     const cookieStore = await cookies();
@@ -23,13 +24,12 @@ export async function GET(request) {
       }
     );
 
-    const { data } = await supabase.auth.exchangeCodeForSession(code);
-
-    // First-time invite: send to password setup page
-    if (data?.user?.user_metadata?.setup_required) {
-      return NextResponse.redirect(`${origin}/auth/update-password?welcome=true`);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error && data?.session) {
+      return NextResponse.redirect(`${origin}${next}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/dashboard`);
+  // No code or exchange failed — redirect to next anyway (client-side will handle hash tokens)
+  return NextResponse.redirect(`${origin}${next}`);
 }

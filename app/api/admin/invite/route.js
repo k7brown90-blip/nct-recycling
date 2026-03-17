@@ -26,7 +26,7 @@ export async function POST(request) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/update-password?welcome=true`;
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/auth/update-password%3Fwelcome%3Dtrue`;
 
   // Try to generate an invite link first
   let linkData;
