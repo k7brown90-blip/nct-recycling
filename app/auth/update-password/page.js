@@ -1,9 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 
-export default function UpdatePasswordPage() {
+function UpdatePasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isWelcome = searchParams.get("welcome") === "true";
@@ -130,5 +130,13 @@ export default function UpdatePasswordPage() {
         </form>
       </div>
     </main>
+  );
+}
+
+export default function UpdatePasswordPage() {
+  return (
+    <Suspense fallback={<main className="min-h-[70vh] flex items-center justify-center"><p className="text-gray-500 text-sm">Loading…</p></main>}>
+      <UpdatePasswordForm />
+    </Suspense>
   );
 }
