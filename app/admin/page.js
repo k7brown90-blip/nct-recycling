@@ -12,6 +12,7 @@ export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [authError, setAuthError] = useState("");
 
+  const [section, setSection] = useState("reseller"); // "reseller" | "nonprofit"
   const [applications, setApplications] = useState([]);
   const [filter, setFilter] = useState("pending");
   const [loading, setLoading] = useState(false);
@@ -20,19 +21,27 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  const apiPath = section === "nonprofit"
+    ? "/api/admin/nonprofit-applications"
+    : "/api/admin/applications";
+
   const fetchApplications = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/admin/applications?status=${filter}`, {
+    const res = await fetch(`${apiPath}?status=${filter}`, {
       headers: { Authorization: `Bearer ${secret}` },
     });
     if (res.status === 401) { setAuthed(false); return; }
     const json = await res.json();
     setApplications(json.applications || []);
     setLoading(false);
-  }, [filter, secret]);
+  }, [filter, secret, apiPath]);
 
   useEffect(() => {
-    if (authed) fetchApplications();
+    if (authed) {
+      setSelected(null);
+      setApplications([]);
+      fetchApplications();
+    }
   }, [authed, fetchApplications]);
 
   async function handleAuth(e) {
@@ -53,7 +62,6 @@ export default function AdminPage() {
     setActionLoading(true);
     setMessage("");
 
-    // Send invite email via Supabase Auth
     const inviteRes = await fetch("/api/admin/invite", {
       method: "POST",
       headers: {
@@ -63,8 +71,8 @@ export default function AdminPage() {
       body: JSON.stringify({
         application_id: selected.id,
         email: selected.email,
-        full_name: selected.full_name,
-        role: "reseller",
+        full_name: section === "nonprofit" ? selected.contact_name : selected.full_name,
+        role: section,
       }),
     });
 
@@ -84,7 +92,7 @@ export default function AdminPage() {
     if (!selected) return;
     setActionLoading(true);
     setMessage("");
-    const res = await fetch("/api/admin/applications", {
+    const res = await fetch(apiPath, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -103,8 +111,9 @@ export default function AdminPage() {
     setActionLoading(false);
   }
 
-  async function viewDR0563(fileName) {
-    const res = await fetch(`/api/admin/dr0563?file=${encodeURIComponent(fileName)}`, {
+  async function viewDocument(fileName, bucket) {
+    const endpoint = bucket === "nonprofit-docs" ? "/api/admin/irs-letter" : "/api/admin/dr0563";
+    const res = await fetch(`${endpoint}?file=${encodeURIComponent(fileName)}`, {
       headers: { Authorization: `Bearer ${secret}` },
     });
     const json = await res.json();
@@ -135,19 +144,38 @@ export default function AdminPage() {
     );
   }
 
+  const isNonprofit = section === "nonprofit";
+
   return (
     <main className="max-w-6xl mx-auto px-4 py-10">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-nct-navy">Partner Applications</h1>
-        <button
-          onClick={() => setAuthed(false)}
-          className="text-sm text-gray-500 underline"
-        >
+        <h1 className="text-2xl font-bold text-nct-navy">Admin Dashboard</h1>
+        <button onClick={() => setAuthed(false)} className="text-sm text-gray-500 underline">
           Sign out
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* Section tabs */}
+      <div className="flex gap-3 mb-6 border-b border-gray-200 pb-4">
+        <button
+          onClick={() => { setSection("reseller"); setFilter("pending"); setSelected(null); setMessage(""); }}
+          className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${
+            section === "reseller" ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+          }`}
+        >
+          Reseller Applications
+        </button>
+        <button
+          onClick={() => { setSection("nonprofit"); setFilter("pending"); setSelected(null); setMessage(""); }}
+          className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${
+            section === "nonprofit" ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+          }`}
+        >
+          Nonprofit Applications
+        </button>
+      </div>
+
+      {/* Status filter */}
       <div className="flex gap-2 mb-6">
         {["pending", "approved", "denied", ""].map((s) => (
           <button
@@ -195,9 +223,14 @@ export default function AdminPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-gray-900 truncate">{app.full_name}</p>
+                      <p className="font-medium text-gray-900 truncate">
+                        {isNonprofit ? app.org_name : app.full_name}
+                      </p>
                       <p className="text-xs text-gray-500 truncate">
-                        {app.email} · {app.business_name || "—"}
+                        {app.email}
+                        {isNonprofit
+                          ? (app.contact_name ? ` · ${app.contact_name}` : "")
+                          : (app.business_name ? ` · ${app.business_name}` : "")}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
@@ -209,7 +242,8 @@ export default function AdminPage() {
                   </div>
                   <p className="text-xs text-gray-400 mt-1">
                     {new Date(app.created_at).toLocaleDateString()}
-                    {app.dr0563_file_url && " · DR 0563 on file"}
+                    {isNonprofit && app.irs_letter_url && " · IRS letter on file"}
+                    {!isNonprofit && app.dr0563_file_url && " · DR 0563 on file"}
                   </p>
                 </button>
               ))}
@@ -222,41 +256,82 @@ export default function AdminPage() {
           <div className="w-96 shrink-0 border border-gray-200 rounded-xl p-5 self-start sticky top-20">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h2 className="font-bold text-nct-navy text-lg">{selected.full_name}</h2>
+                <h2 className="font-bold text-nct-navy text-lg">
+                  {isNonprofit ? selected.org_name : selected.full_name}
+                </h2>
                 <p className="text-sm text-gray-500">{selected.email}</p>
               </div>
               <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
 
-            <dl className="space-y-1.5 text-sm mb-4">
-              {[
-                ["Business", selected.business_name],
-                ["Phone", selected.phone],
-                ["Program", selected.program_type],
-                ["Platforms", selected.platforms?.join(", ")],
-                ["Website", selected.website],
-                ["Visit Freq", selected.visit_frequency],
-                ["Expected Spend", selected.expected_spend],
-                ["Categories", selected.categories?.join(", ")],
-                ["Tax License #", selected.tax_license_number],
-                ["Monthly Volume", selected.estimated_monthly_volume],
-                ["Business Type", selected.business_type],
-                ["Feature Consent", selected.feature_consent ? "Yes" : "No"],
-                ["Shop to Feature", selected.shop_name_to_feature],
-                ["Signed As", selected.contract_signed_name],
-                ["Agreed At", selected.contract_agreed_at ? new Date(selected.contract_agreed_at).toLocaleString() : null],
-                ["Submitted", new Date(selected.created_at).toLocaleString()],
-              ].filter(([, v]) => v).map(([label, val]) => (
-                <div key={label} className="flex gap-2">
-                  <dt className="text-gray-500 w-32 shrink-0">{label}:</dt>
-                  <dd className="font-medium break-all">{val}</dd>
-                </div>
-              ))}
-            </dl>
+            {isNonprofit ? (
+              <dl className="space-y-1.5 text-sm mb-4">
+                {[
+                  ["Contact", selected.contact_name],
+                  ["Title", selected.contact_title],
+                  ["Phone", selected.phone],
+                  ["Org Type", selected.org_type],
+                  ["EIN", selected.ein],
+                  ["Website", selected.website],
+                  ["Program", selected.program_type],
+                  ["Est. Monthly (lbs)", selected.estimated_donation_lbs],
+                  ["Categories Needed", selected.categories_needed?.join(", ")],
+                  ["Address", [selected.address_street, selected.address_city, selected.address_state, selected.address_zip].filter(Boolean).join(", ")],
+                  ["Pickup Address", selected.pickup_address],
+                  ["Pickup Hours", selected.available_pickup_hours],
+                  ["Dock Instructions", selected.dock_instructions],
+                  ["Onsite Contact", selected.onsite_contact],
+                  ["Charity Drive", selected.charity_drive_description],
+                  ["Feature Consent", selected.feature_consent ? "Yes" : "No"],
+                  ["Signed As", selected.contract_signed_name],
+                  ["Agreed At", selected.contract_agreed_at ? new Date(selected.contract_agreed_at).toLocaleString() : null],
+                  ["Submitted", new Date(selected.created_at).toLocaleString()],
+                ].filter(([, v]) => v).map(([label, val]) => (
+                  <div key={label} className="flex gap-2">
+                    <dt className="text-gray-500 w-36 shrink-0">{label}:</dt>
+                    <dd className="font-medium break-all">{val}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <dl className="space-y-1.5 text-sm mb-4">
+                {[
+                  ["Business", selected.business_name],
+                  ["Phone", selected.phone],
+                  ["Program", selected.program_type],
+                  ["Platforms", selected.platforms?.join(", ")],
+                  ["Website", selected.website],
+                  ["Visit Freq", selected.visit_frequency],
+                  ["Expected Spend", selected.expected_spend],
+                  ["Categories", selected.categories?.join(", ")],
+                  ["Tax License #", selected.tax_license_number],
+                  ["Monthly Volume", selected.estimated_monthly_volume],
+                  ["Business Type", selected.business_type],
+                  ["Feature Consent", selected.feature_consent ? "Yes" : "No"],
+                  ["Shop to Feature", selected.shop_name_to_feature],
+                  ["Signed As", selected.contract_signed_name],
+                  ["Agreed At", selected.contract_agreed_at ? new Date(selected.contract_agreed_at).toLocaleString() : null],
+                  ["Submitted", new Date(selected.created_at).toLocaleString()],
+                ].filter(([, v]) => v).map(([label, val]) => (
+                  <div key={label} className="flex gap-2">
+                    <dt className="text-gray-500 w-32 shrink-0">{label}:</dt>
+                    <dd className="font-medium break-all">{val}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
 
-            {selected.dr0563_file_url && (
+            {isNonprofit && selected.irs_letter_url && (
               <button
-                onClick={() => viewDR0563(selected.dr0563_file_url)}
+                onClick={() => viewDocument(selected.irs_letter_url, "nonprofit-docs")}
+                className="text-nct-navy underline text-sm mb-4 block"
+              >
+                View IRS Determination Letter →
+              </button>
+            )}
+            {!isNonprofit && selected.dr0563_file_url && (
+              <button
+                onClick={() => viewDocument(selected.dr0563_file_url, "dr0563")}
                 className="text-nct-navy underline text-sm mb-4 block"
               >
                 View DR 0563 →
@@ -270,14 +345,14 @@ export default function AdminPage() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
-                  placeholder="Optional note (visible to applicant if denied)"
+                  placeholder="Optional note"
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
                 />
               </div>
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleApproveAndInvite()}
+                  onClick={handleApproveAndInvite}
                   disabled={actionLoading || selected.status === "approved"}
                   className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40"
                 >
