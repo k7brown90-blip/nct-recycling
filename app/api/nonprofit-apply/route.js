@@ -32,7 +32,7 @@ export async function POST(request) {
     const authorized_title = formData.get("authorized_title")?.trim();
     const irs_letter = formData.get("irs_letter");
 
-    if (!org_name || !contact_name || !email || !contract_agreed || !contract_signed_name) {
+    if (!org_name || !contact_name || !email || !contract_agreed || !contract_signed_name || !authorized_title) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
 

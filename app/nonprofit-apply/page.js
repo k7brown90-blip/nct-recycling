@@ -201,7 +201,7 @@ export default function NonprofitApplyPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Title / Authority</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Title / Authority <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 name="authorized_title"
@@ -209,6 +209,7 @@ export default function NonprofitApplyPage() {
                 onChange={handleChange}
                 placeholder="e.g. Executive Director"
                 className="w-full border border-gray-300 rounded-lg px-4 py-2"
+                required
               />
             </div>
           </div>
