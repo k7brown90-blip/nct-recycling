@@ -70,7 +70,7 @@ export async function PATCH(request) {
     const typeLabel = appt.appointment_type === "in_person" ? "in-person warehouse visit" : "delivery";
 
     resend.emails.send({
-      from: "NCT Recycling <noreply@nctrecycling.com>",
+      from: "NCT Recycling <donate@nctrecycling.com>",
       to: np.email,
       subject: `Exchange Appointment Confirmed — ${dateStr}`,
       html: `

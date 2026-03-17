@@ -17,23 +17,39 @@ function UpdatePasswordForm() {
   useEffect(() => {
     const supabase = createClient();
 
-    // Register listener FIRST so we don't miss events fired during init
+    // Register listener first so we don't miss events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") && session) {
         setSessionReady(true);
       }
     });
 
-    // Handle PKCE flow where token arrives as ?code= query param
-    const code = new URLSearchParams(window.location.search).get("code");
-    if (code) {
-      supabase.auth.exchangeCodeForSession(code);
+    async function init() {
+      // Check for PKCE code in query params
+      const code = new URLSearchParams(window.location.search).get("code");
+      if (code) {
+        const { data } = await supabase.auth.exchangeCodeForSession(code);
+        if (data?.session) { setSessionReady(true); return; }
+      }
+
+      // Check for implicit flow tokens in the URL hash (#access_token=...&refresh_token=...)
+      const hash = window.location.hash;
+      if (hash) {
+        const params = new URLSearchParams(hash.substring(1));
+        const access_token = params.get("access_token");
+        const refresh_token = params.get("refresh_token");
+        if (access_token && refresh_token) {
+          const { data } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (data?.session) { setSessionReady(true); return; }
+        }
+      }
+
+      // Fall back: check if a session already exists
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) setSessionReady(true);
     }
 
-    // Handle case where session already exists (e.g. already logged in)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setSessionReady(true);
-    });
+    init();
 
     return () => subscription.unsubscribe();
   }, []);
@@ -61,7 +77,6 @@ function UpdatePasswordForm() {
       return;
     }
 
-    // Clear setup flag if this was a first-login invite
     if (isWelcome) {
       await supabase.auth.updateUser({ data: { setup_required: false } });
     }

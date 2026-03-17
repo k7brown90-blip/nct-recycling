@@ -87,7 +87,7 @@ export async function POST(request) {
 
     // Notify NCT Recycling
     resend.emails.send({
-      from: "NCT Recycling Portal <noreply@nctrecycling.com>",
+      from: "NCT Recycling Portal <donate@nctrecycling.com>",
       to: "donate@nctrecycling.com",
       subject: `New Nonprofit Co-Op Application — ${org_name}`,
       html: `

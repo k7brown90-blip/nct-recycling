@@ -131,7 +131,7 @@ export async function POST(request) {
   // Notify each nonprofit on the route
   const nonprofitEmails = (nonprofits || []).map((np) =>
     resend.emails.send({
-      from: "NCT Recycling <noreply@nctrecycling.com>",
+      from: "NCT Recycling <donate@nctrecycling.com>",
       to: np.email,
       subject: `Pickup Scheduled — ${pickupDateStr}`,
       html: `
@@ -155,7 +155,7 @@ export async function POST(request) {
 
   const resellerEmails = (resellers || []).map((r) =>
     resend.emails.send({
-      from: "NCT Recycling <noreply@nctrecycling.com>",
+      from: "NCT Recycling <donate@nctrecycling.com>",
       to: r.email,
       subject: `New Load Available for Shopping — ${shoppingDateStr}`,
       html: `

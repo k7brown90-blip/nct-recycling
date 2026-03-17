@@ -156,7 +156,7 @@ export async function POST(request) {
   });
 
   resend.emails.send({
-    from: "NCT Recycling <noreply@nctrecycling.com>",
+    from: "NCT Recycling <donate@nctrecycling.com>",
     to: reseller.email,
     subject: `Shopping Confirmed — ${info.label} · ${dateStr}`,
     html: `

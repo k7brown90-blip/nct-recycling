@@ -112,7 +112,7 @@ export async function POST(request) {
   });
 
   resend.emails.send({
-    from: "NCT Recycling <noreply@nctrecycling.com>",
+    from: "NCT Recycling <donate@nctrecycling.com>",
     to: np.email,
     subject: `Bins Visit Confirmed — ${dateStr}`,
     html: `

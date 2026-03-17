@@ -79,7 +79,7 @@ export async function POST(request) {
 
   // Send branded invite email via Resend
   const { error: emailError } = await resend.emails.send({
-    from: "NCT Recycling <noreply@nctrecycling.com>",
+    from: "NCT Recycling <donate@nctrecycling.com>",
     to: email,
     subject: "You've been approved — Set up your NCT Recycling partner account",
     html: `
@@ -106,7 +106,7 @@ export async function POST(request) {
           <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />
           <p style="font-size:12px;color:#999;margin:0">
             NCT Recycling LLC · 6108 South College Ave STE C, Fort Collins CO 80525<br>
-            <a href="mailto:info@nctrecycling.com" style="color:#999">info@nctrecycling.com</a>
+            <a href="mailto:donate@nctrecycling.com" style="color:#999">donate@nctrecycling.com</a>
           </p>
         </div>
       </div>
