@@ -38,16 +38,15 @@ export async function POST(request) {
 
     const supabase = createServiceClient();
 
-    // Check for duplicate email
-    const { data: existing } = await supabase
-      .from("reseller_applications")
-      .select("id, status")
-      .eq("email", email)
-      .maybeSingle();
+    // Check for duplicate email across both application types
+    const [{ data: existingReseller }, { data: existingNonprofit }] = await Promise.all([
+      supabase.from("reseller_applications").select("id").eq("email", email).maybeSingle(),
+      supabase.from("nonprofit_applications").select("id").eq("email", email).maybeSingle(),
+    ]);
 
-    if (existing) {
+    if (existingReseller || existingNonprofit) {
       return NextResponse.json(
-        { error: "An application with this email already exists.", status: existing.status },
+        { error: "An application with this email already exists." },
         { status: 409 }
       );
     }
