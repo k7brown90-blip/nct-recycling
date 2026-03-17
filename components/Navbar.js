@@ -10,6 +10,7 @@ const navLinks = [
   { href: "/community-partners", label: "Our Partners" },
   { href: "/wholesale", label: "Wholesale" },
   { href: "/contact", label: "Contact" },
+  { href: "/apply", label: "Apply" },
 ];
 
 export default function Navbar() {
