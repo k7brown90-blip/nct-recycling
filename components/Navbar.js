@@ -22,13 +22,15 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-3">
-          <Image
-            src="/images/nct-logo.png"
-            alt="NCT Recycling"
-            width={48}
-            height={48}
-            className="rounded"
-          />
+          <div className="bg-white rounded-lg p-1 shadow-md">
+            <Image
+              src="/images/nct-logo.png"
+              alt="NCT Recycling"
+              width={56}
+              height={56}
+              className="rounded"
+            />
+          </div>
           <div className="flex flex-col leading-tight">
             <span className="text-xl font-bold tracking-wide text-white">NCT Recycling</span>
             <span className="text-xs text-nct-gold font-medium tracking-widest uppercase">Fort Collins, CO</span>
