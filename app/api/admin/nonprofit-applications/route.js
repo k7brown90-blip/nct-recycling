@@ -32,6 +32,21 @@ export async function GET(request) {
   return NextResponse.json({ applications: data });
 }
 
+export async function DELETE(request) {
+  if (!checkAdminAuth(request)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const { id } = await request.json();
+  if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
+
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("nonprofit_applications").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: "Delete failed." }, { status: 500 });
+
+  return NextResponse.json({ success: true });
+}
+
 export async function PATCH(request) {
   if (!checkAdminAuth(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });

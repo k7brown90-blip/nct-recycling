@@ -151,6 +151,20 @@ export default function AdminPage() {
     setActionLoading(false);
   }
 
+  async function handleDelete() {
+    if (!selected) return;
+    if (!confirm(`Permanently delete this application from ${selected.email}? This cannot be undone.`)) return;
+    setActionLoading(true); setMessage("");
+    const res = await fetch(apiPath, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: selected.id }),
+    });
+    if (res.ok) { setMessage("Application deleted."); setSelected(null); fetchApplications(); }
+    else setMessage("Delete failed. Try again.");
+    setActionLoading(false);
+  }
+
   async function viewDocument(fileName, bucket) {
     const endpoint = bucket === "nonprofit-docs" ? "/api/admin/irs-letter" : "/api/admin/dr0563";
     const res = await fetch(`${endpoint}?file=${encodeURIComponent(fileName)}`, { headers: authHeader });
@@ -373,6 +387,10 @@ export default function AdminPage() {
                     <button onClick={() => handleAction("pending")} disabled={actionLoading || selected.status === "pending"}
                       className="px-3 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Reset to pending">
                       ↺
+                    </button>
+                    <button onClick={handleDelete} disabled={actionLoading}
+                      className="px-3 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Delete application">
+                      🗑
                     </button>
                   </div>
                 </div>
