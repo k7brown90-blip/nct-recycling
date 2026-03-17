@@ -67,11 +67,17 @@ export async function POST(request) {
 
   const estimated_total_bags = stops.reduce((sum, s) => sum + (s.estimated_bags || 0), 0);
 
+  // Shopping day = day after pickup
+  const shoppingDay = new Date(scheduled_date);
+  shoppingDay.setDate(shoppingDay.getDate() + 1);
+  const shopping_date = shoppingDay.toISOString().split("T")[0];
+
   // Create route
   const { data: route, error: routeError } = await db
     .from("pickup_routes")
     .insert({
       scheduled_date,
+      shopping_date,
       scheduled_time: scheduled_time || null,
       notes: notes || null,
       estimated_total_bags,
@@ -103,30 +109,38 @@ export async function POST(request) {
     .select("id, org_name, contact_name, email")
     .in("id", nonprofitIds);
 
-  const dateStr = new Date(scheduled_date).toLocaleDateString("en-US", {
+  // Pickup date display
+  const pickupDateStr = new Date(scheduled_date).toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
-  // Notify each nonprofit
+  // Shopping day = day after pickup
+  const shoppingDate = new Date(scheduled_date);
+  shoppingDate.setDate(shoppingDate.getDate() + 1);
+  const shoppingDateStr = shoppingDate.toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
+  // Notify each nonprofit on the route
   const nonprofitEmails = (nonprofits || []).map((np) =>
     resend.emails.send({
       from: "NCT Recycling <noreply@nctrecycling.com>",
       to: np.email,
-      subject: `Pickup Scheduled — ${dateStr}`,
+      subject: `Pickup Scheduled — ${pickupDateStr}`,
       html: `
         <h2>Your Pickup Has Been Scheduled</h2>
         <p>Hi ${np.contact_name?.split(" ")[0] || "there"},</p>
         <p>NCT Recycling has scheduled a donation pickup from <strong>${np.org_name}</strong>.</p>
-        <p><strong>Date:</strong> ${dateStr}${scheduled_time ? `<br><strong>Time:</strong> ${scheduled_time}` : ""}</p>
+        <p><strong>Pickup Date:</strong> ${pickupDateStr}${scheduled_time ? `<br><strong>Estimated Time:</strong> ${scheduled_time}` : ""}</p>
         ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ""}
-        <p>Please ensure your donated bags are accessible and your bag count in the portal is up to date.</p>
+        <p>Please ensure your donated bags are accessible and your bag count in the portal is up to date before the pickup date.</p>
         <p>Questions? Call us at (970) 232-9108 or email donate@nctrecycling.com.</p>
         <p>— NCT Recycling Team</p>
       `,
     }).catch((err) => console.error("Nonprofit email error:", err))
   );
 
-  // Notify approved resellers about incoming load
+  // Notify all approved resellers — shopping opens the day AFTER pickup
   const { data: resellers } = await db
     .from("reseller_applications")
     .select("email, full_name, business_name")
@@ -136,15 +150,29 @@ export async function POST(request) {
     resend.emails.send({
       from: "NCT Recycling <noreply@nctrecycling.com>",
       to: r.email,
-      subject: `Incoming Load Alert — ${dateStr}`,
+      subject: `New Load Available for Shopping — ${shoppingDateStr}`,
       html: `
-        <h2>Incoming Load at NCT Recycling</h2>
+        <h2>Fresh Load Available at NCT Recycling</h2>
         <p>Hi ${r.full_name?.split(" ")[0] || "there"},</p>
-        <p>A new pickup route has been scheduled — which means a fresh load will be arriving at our facility.</p>
-        <p><strong>Pickup Date:</strong> ${dateStr}</p>
-        <p>Bins will be restocked after sorting is complete. If you're interested in claiming this load or scheduling a visit, contact us directly.</p>
+        <p>A pickup route has been scheduled for <strong>${pickupDateStr}</strong>. Once the load is processed, shopping opens the following day.</p>
+        <table style="border-collapse:collapse;width:100%;max-width:500px;margin:16px 0">
+          <tr style="background:#0b2a45;color:white">
+            <td style="padding:10px 16px;font-weight:bold">Pickup Date</td>
+            <td style="padding:10px 16px">${pickupDateStr}</td>
+          </tr>
+          <tr style="background:#f9f5e8">
+            <td style="padding:10px 16px;font-weight:bold;color:#0b2a45">Shopping Opens</td>
+            <td style="padding:10px 16px;font-weight:bold;color:#d49a22">${shoppingDateStr}</td>
+          </tr>
+        </table>
+        <p>Log in to your reseller portal to schedule your shopping visit for <strong>${shoppingDateStr}</strong>.</p>
         <p style="margin-top:16px">
-          <a href="tel:+19702329108" style="color:#0b2a45">(970) 232-9108</a> &nbsp;|&nbsp;
+          <a href="https://www.nctrecycling.com/reseller/dashboard" style="background:#0b2a45;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;font-weight:bold;display:inline-block">
+            Schedule Your Visit →
+          </a>
+        </p>
+        <p style="margin-top:12px;font-size:13px;color:#666">
+          Questions? <a href="tel:+19702329108" style="color:#0b2a45">(970) 232-9108</a> &nbsp;|&nbsp;
           <a href="mailto:donate@nctrecycling.com" style="color:#0b2a45">donate@nctrecycling.com</a>
         </p>
         <p>— NCT Recycling Team</p>

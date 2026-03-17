@@ -63,7 +63,8 @@ create policy "Service role manages exchange appointments"
 create table if not exists pickup_routes (
   id                    uuid primary key default uuid_generate_v4(),
   created_at            timestamptz default now(),
-  scheduled_date        date not null,
+  scheduled_date        date not null,          -- day of pickup
+  shopping_date         date,                   -- day after pickup — when resellers can shop
   scheduled_time        text,
   status                text not null default 'scheduled'
                           check (status in ('scheduled', 'in_progress', 'completed', 'cancelled')),
