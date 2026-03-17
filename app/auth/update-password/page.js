@@ -15,22 +15,33 @@ function UpdatePasswordForm() {
   const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
-    // Handle password reset link: Supabase passes code in the URL hash or query
     const supabase = createClient();
 
-    // Listen for the PASSWORD_RECOVERY event (fired when reset link is clicked)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-        setSessionReady(true);
+    async function init() {
+      // PKCE flow: invite or reset link may include ?code= in the URL
+      const code = new URLSearchParams(window.location.search).get("code");
+      if (code) {
+        await supabase.auth.exchangeCodeForSession(code);
       }
-    });
 
-    // Also check if already have a session (invite flow lands here after callback)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setSessionReady(true);
-    });
+      // Check if session already exists (implicit flow sets it via hash automatically)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setSessionReady(true);
+        return;
+      }
 
-    return () => subscription.unsubscribe();
+      // Listen for PASSWORD_RECOVERY or SIGNED_IN (implicit/hash flow)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+          setSessionReady(true);
+        }
+      });
+
+      return () => subscription.unsubscribe();
+    }
+
+    init();
   }, []);
 
   async function handleSubmit(e) {
