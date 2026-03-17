@@ -17,31 +17,25 @@ function UpdatePasswordForm() {
   useEffect(() => {
     const supabase = createClient();
 
-    async function init() {
-      // PKCE flow: invite or reset link may include ?code= in the URL
-      const code = new URLSearchParams(window.location.search).get("code");
-      if (code) {
-        await supabase.auth.exchangeCodeForSession(code);
-      }
-
-      // Check if session already exists (implicit flow sets it via hash automatically)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+    // Register listener FIRST so we don't miss events fired during init
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") && session) {
         setSessionReady(true);
-        return;
       }
+    });
 
-      // Listen for PASSWORD_RECOVERY or SIGNED_IN (implicit/hash flow)
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-          setSessionReady(true);
-        }
-      });
-
-      return () => subscription.unsubscribe();
+    // Handle PKCE flow where token arrives as ?code= query param
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code);
     }
 
-    init();
+    // Handle case where session already exists (e.g. already logged in)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setSessionReady(true);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   async function handleSubmit(e) {
