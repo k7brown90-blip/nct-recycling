@@ -5,12 +5,28 @@ import { NextResponse } from "next/server";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const SLOT_CAPACITY = 5; // max resellers per slot type per day
+const LBS_PER_BAG            = 20;
+const LBS_PER_WHOLESALE_SPOT = 500;
+const BINS_WEEKDAY_CAP       = 10;
+const BINS_SUNDAY_CAP        = 999;
 
 const SLOT_INFO = {
-  wholesale: { label: "Wholesale",  hours: "10:00 AM – 12:00 PM", price: "$0.30/lb (unopened bags)" },
-  bins:      { label: "Bins",       hours: "12:00 PM – 4:00 PM",  price: "$2.00/lb (sorted bins)"  },
+  wholesale: { label: "Wholesale",  hours: "10:00 AM – 4:00 PM", price: "$0.30/lb (unopened bags)" },
+  bins:      { label: "Bins",       hours: "12:00 PM – 4:00 PM", price: "$2.00/lb (sorted bins)"  },
 };
+
+function isSunday(dateStr) {
+  return new Date(dateStr + "T12:00:00").getDay() === 0;
+}
+function calcWholesaleCap(day, route) {
+  if (day.wholesale_capacity != null) return day.wholesale_capacity;
+  const bags = route?.actual_total_bags || route?.estimated_total_bags || 0;
+  return Math.max(1, Math.floor((bags * LBS_PER_BAG) / LBS_PER_WHOLESALE_SPOT));
+}
+function calcBinsCap(day) {
+  if (day.bins_capacity != null) return day.bins_capacity;
+  return isSunday(day.shopping_date) ? BINS_SUNDAY_CAP : BINS_WEEKDAY_CAP;
+}
 
 async function getResellerProfile(user, db) {
   const { data: profile } = await db
@@ -40,11 +56,10 @@ export async function GET(request) {
   const reseller = await getResellerProfile(user, db);
   if (!reseller) return NextResponse.json({ error: "Not a reseller account." }, { status: 403 });
 
-  // Get open shopping days from today onwards
   const today = new Date().toISOString().split("T")[0];
   const { data: days, error } = await db
     .from("shopping_days")
-    .select("id, shopping_date, status, route_id")
+    .select("id, shopping_date, status, wholesale_capacity, bins_capacity, pickup_routes(actual_total_bags, estimated_total_bags)")
     .eq("status", "open")
     .gte("shopping_date", today)
     .order("shopping_date", { ascending: true })
@@ -52,7 +67,6 @@ export async function GET(request) {
 
   if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
 
-  // Get all bookings for these days
   const dayIds = (days || []).map((d) => d.id);
   const { data: allBookings } = await db
     .from("shopping_bookings")
@@ -60,32 +74,38 @@ export async function GET(request) {
     .in("shopping_day_id", dayIds.length ? dayIds : ["00000000-0000-0000-0000-000000000000"])
     .eq("status", "confirmed");
 
-  // Build availability + my bookings per day
   const result = (days || []).map((day) => {
-    const dayBookings = allBookings?.filter((b) => b.shopping_day_id === day.id) || [];
+    const route  = day.pickup_routes;
+    const wCap   = calcWholesaleCap(day, route);
+    const bCap   = calcBinsCap(day);
+    const sunday = isSunday(day.shopping_date);
+
+    const dayBookings    = allBookings?.filter((b) => b.shopping_day_id === day.id) || [];
     const wholesaleCount = dayBookings.filter((b) => b.slot_type === "wholesale").length;
     const binsCount      = dayBookings.filter((b) => b.slot_type === "bins").length;
-    const myWholesale = dayBookings.find((b) => b.slot_type === "wholesale" && b.reseller_id === reseller.id);
-    const myBins      = dayBookings.find((b) => b.slot_type === "bins"      && b.reseller_id === reseller.id);
+    const myWholesale    = dayBookings.find((b) => b.slot_type === "wholesale" && b.reseller_id === reseller.id);
+    const myBins         = dayBookings.find((b) => b.slot_type === "bins"      && b.reseller_id === reseller.id);
 
     return {
       id: day.id,
       shopping_date: day.shopping_date,
       status: day.status,
+      is_sunday: sunday,
       slots: {
         wholesale: {
           ...SLOT_INFO.wholesale,
-          capacity: SLOT_CAPACITY,
+          capacity: wCap,
           booked: wholesaleCount,
-          available: SLOT_CAPACITY - wholesaleCount,
-          my_booking: myWholesale ? true : false,
+          available: wCap - wholesaleCount,
+          my_booking: !!myWholesale,
         },
         bins: {
           ...SLOT_INFO.bins,
-          capacity: SLOT_CAPACITY,
+          capacity: bCap,
           booked: binsCount,
-          available: SLOT_CAPACITY - binsCount,
-          my_booking: myBins ? true : false,
+          available: bCap === BINS_SUNDAY_CAP ? 999 : bCap - binsCount,
+          my_booking: !!myBins,
+          no_cap: sunday && day.bins_capacity == null,
         },
       },
     };
@@ -110,10 +130,9 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  // Verify shopping day exists and is open
   const { data: day } = await db
     .from("shopping_days")
-    .select("id, shopping_date, status")
+    .select("id, shopping_date, status, wholesale_capacity, bins_capacity, pickup_routes(actual_total_bags, estimated_total_bags)")
     .eq("id", shopping_day_id)
     .maybeSingle();
 
@@ -121,19 +140,23 @@ export async function POST(request) {
     return NextResponse.json({ error: "This shopping day is not available." }, { status: 400 });
   }
 
-  // Check capacity
-  const { count } = await db
-    .from("shopping_bookings")
-    .select("id", { count: "exact" })
-    .eq("shopping_day_id", shopping_day_id)
-    .eq("slot_type", slot_type)
-    .eq("status", "confirmed");
+  const route = day.pickup_routes;
+  const cap = slot_type === "wholesale" ? calcWholesaleCap(day, route) : calcBinsCap(day);
 
-  if (count >= SLOT_CAPACITY) {
-    return NextResponse.json({ error: `${SLOT_INFO[slot_type].label} slots are full for this day.` }, { status: 409 });
+  // Check capacity (BINS_SUNDAY_CAP = effectively unlimited, skip check)
+  if (cap < BINS_SUNDAY_CAP) {
+    const { count } = await db
+      .from("shopping_bookings")
+      .select("id", { count: "exact" })
+      .eq("shopping_day_id", shopping_day_id)
+      .eq("slot_type", slot_type)
+      .eq("status", "confirmed");
+
+    if (count >= cap) {
+      return NextResponse.json({ error: `${SLOT_INFO[slot_type].label} slots are full for this day.` }, { status: 409 });
+    }
   }
 
-  // Insert booking (unique constraint prevents double-booking same type same day)
   const { error: bookingError } = await db.from("shopping_bookings").insert({
     shopping_day_id,
     reseller_id: reseller.id,
@@ -145,11 +168,9 @@ export async function POST(request) {
     if (bookingError.code === "23505") {
       return NextResponse.json({ error: "You already have a booking for this slot." }, { status: 409 });
     }
-    console.error("Booking error:", bookingError);
     return NextResponse.json({ error: "Failed to book slot." }, { status: 500 });
   }
 
-  // Confirmation email
   const info = SLOT_INFO[slot_type];
   const dateStr = new Date(day.shopping_date).toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",

@@ -22,8 +22,14 @@ const SLOT_DISPLAY = {
 
 function SlotCard({ type, slot, dayId, onBook, onCancel, loading }) {
   const display = SLOT_DISPLAY[type];
-  const isFull = slot.available === 0 && !slot.my_booking;
+  const isFull = slot.available === 0 && !slot.my_booking && !slot.no_cap;
   const spotsLeft = slot.available;
+
+  function availabilityLabel() {
+    if (slot.no_cap) return "Open — no cap";
+    if (isFull && !slot.my_booking) return "Full";
+    return `${spotsLeft} / ${slot.capacity} open`;
+  }
 
   return (
     <div className={`border-2 rounded-xl p-4 ${slot.my_booking ? display.color : isFull ? "border-gray-200 bg-gray-50 opacity-70" : "border-gray-200 bg-white"}`}>
@@ -35,18 +41,21 @@ function SlotCard({ type, slot, dayId, onBook, onCancel, loading }) {
         <div className="text-right">
           <p className="text-lg font-bold text-nct-navy">{display.price}</p>
           <span className={`text-xs px-2 py-0.5 rounded-full ${display.badgeColor}`}>
-            {isFull && !slot.my_booking ? "Full" : `${spotsLeft} / ${slot.capacity} open`}
+            {availabilityLabel()}
           </span>
         </div>
       </div>
       <p className="text-xs text-gray-500 mb-3">{display.desc}</p>
 
-      {/* Availability bar */}
-      <div className="flex gap-1 mb-3">
-        {Array.from({ length: slot.capacity }).map((_, i) => (
-          <div key={i} className={`h-2 flex-1 rounded-full ${i < slot.booked ? "bg-nct-navy" : "bg-gray-200"}`} />
-        ))}
-      </div>
+      {/* Availability bar — skip for no-cap Sunday bins */}
+      {!slot.no_cap && (
+        <div className="flex gap-1 mb-3">
+          {Array.from({ length: slot.capacity }).map((_, i) => (
+            <div key={i} className={`h-2 flex-1 rounded-full ${i < slot.booked ? "bg-nct-navy" : "bg-gray-200"}`} />
+          ))}
+        </div>
+      )}
+      {slot.no_cap && <div className="mb-3" />}
 
       {slot.my_booking ? (
         <div className="flex items-center justify-between">

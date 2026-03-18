@@ -75,6 +75,11 @@ export default function AdminPage() {
   // Shopping days state
   const [shoppingDays, setShoppingDays] = useState([]);
   const [shoppingFilter, setShoppingFilter] = useState("upcoming");
+  const [editingShoppingDay, setEditingShoppingDay] = useState(null); // id being edited
+  const [shoppingDayEdits, setShoppingDayEdits] = useState({ wholesale_capacity: "", bins_capacity: "", admin_notes: "" });
+  const [shoppingDayLoading, setShoppingDayLoading] = useState(false);
+  const [newShoppingDay, setNewShoppingDay] = useState({ shopping_date: "", wholesale_capacity: "", bins_capacity: "" });
+  const [showNewShoppingDay, setShowNewShoppingDay] = useState(false);
 
   // Donation lots state (tab overview)
   const [lots, setLots] = useState([]);
@@ -212,6 +217,66 @@ export default function AdminPage() {
     setShoppingDays(json.days || []);
     setLoading(false);
   }, [secret, shoppingFilter]);
+
+  async function handleGenerateSundays() {
+    setShoppingDayLoading(true); setMessage("");
+    const res = await fetch("/api/admin/shopping-days", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ action: "generate_sundays", weeks: 8 }),
+    });
+    const json = await res.json();
+    if (res.ok) { setMessage(`✅ Created ${json.created} Sunday shopping day${json.created !== 1 ? "s" : ""}.`); fetchShoppingDays(); }
+    else setMessage(`Error: ${json.error}`);
+    setShoppingDayLoading(false);
+  }
+
+  async function handleCreateShoppingDay(e) {
+    e.preventDefault();
+    setShoppingDayLoading(true); setMessage("");
+    const res = await fetch("/api/admin/shopping-days", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify(newShoppingDay),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setMessage("✅ Shopping day created.");
+      setShowNewShoppingDay(false);
+      setNewShoppingDay({ shopping_date: "", wholesale_capacity: "", bins_capacity: "" });
+      fetchShoppingDays();
+    } else setMessage(`Error: ${json.error}`);
+    setShoppingDayLoading(false);
+  }
+
+  async function handleSaveShoppingDayEdits(id) {
+    setShoppingDayLoading(true); setMessage("");
+    const res = await fetch("/api/admin/shopping-days", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id, ...shoppingDayEdits }),
+    });
+    if (res.ok) {
+      setMessage("✅ Shopping day updated.");
+      setEditingShoppingDay(null);
+      fetchShoppingDays();
+    } else {
+      const json = await res.json();
+      setMessage(`Error: ${json.error}`);
+    }
+    setShoppingDayLoading(false);
+  }
+
+  async function handleDeleteShoppingDay(id) {
+    if (!confirm("Delete this shopping day? All bookings will be cancelled.")) return;
+    const res = await fetch("/api/admin/shopping-days", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) { setMessage("Shopping day deleted."); fetchShoppingDays(); }
+    else setMessage("Delete failed.");
+  }
 
   useEffect(() => {
     if (!authed) return;
@@ -1701,7 +1766,7 @@ export default function AdminPage() {
       {/* ===== SHOPPING DAYS ===== */}
       {section === "Shopping Days" && (
         <div>
-          <div className="flex gap-2 mb-4 items-center">
+          <div className="flex gap-2 mb-4 items-center flex-wrap">
             {[["upcoming", "Upcoming"], ["all", "All"]].map(([val, label]) => (
               <button key={val} onClick={() => setShoppingFilter(val)}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
@@ -1712,50 +1777,173 @@ export default function AdminPage() {
               </button>
             ))}
             <button onClick={fetchShoppingDays} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻</button>
+            <div className="ml-auto flex gap-2">
+              <button
+                onClick={handleGenerateSundays}
+                disabled={shoppingDayLoading}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-full text-sm transition-colors disabled:opacity-50"
+              >
+                ☀ Generate Next 8 Sundays
+              </button>
+              <button onClick={() => setShowNewShoppingDay((v) => !v)}
+                className="bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-4 py-2 rounded-full text-sm transition-colors">
+                {showNewShoppingDay ? "Cancel" : "+ New Day"}
+              </button>
+            </div>
           </div>
+
+          {/* New day form */}
+          {showNewShoppingDay && (
+            <form onSubmit={handleCreateShoppingDay} className="border-2 border-nct-gold rounded-xl p-4 mb-5 bg-yellow-50">
+              <h3 className="font-bold text-nct-navy mb-3">Create Shopping Day</h3>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-0.5">Date *</label>
+                  <input type="date" required value={newShoppingDay.shopping_date}
+                    onChange={(e) => setNewShoppingDay((p) => ({ ...p, shopping_date: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-0.5">Wholesale spots (blank = auto)</label>
+                  <input type="number" min="0" value={newShoppingDay.wholesale_capacity}
+                    onChange={(e) => setNewShoppingDay((p) => ({ ...p, wholesale_capacity: e.target.value }))}
+                    placeholder="Auto"
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-0.5">Bins cap (blank = default)</label>
+                  <input type="number" min="0" value={newShoppingDay.bins_capacity}
+                    onChange={(e) => setNewShoppingDay((p) => ({ ...p, bins_capacity: e.target.value }))}
+                    placeholder="10 or unlimited"
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                </div>
+              </div>
+              <button type="submit" disabled={shoppingDayLoading || !newShoppingDay.shopping_date}
+                className="bg-nct-navy hover:bg-nct-navy-dark text-white text-sm font-bold py-2 px-5 rounded transition-colors disabled:opacity-50">
+                {shoppingDayLoading ? "Creating…" : "Create →"}
+              </button>
+            </form>
+          )}
 
           {loading ? <p className="text-gray-500 text-sm">Loading…</p>
            : shoppingDays.length === 0 ? <p className="text-gray-500 text-sm">No shopping days found.</p>
            : (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {shoppingDays.map((day) => {
-                const dateStr = new Date(day.shopping_date).toLocaleDateString("en-US", {
+                const dateStr = new Date(day.shopping_date + "T12:00:00").toLocaleDateString("en-US", {
                   weekday: "long", month: "long", day: "numeric", year: "numeric",
                 });
-                const pickupDateStr = day.pickup_routes?.scheduled_date
-                  ? new Date(day.pickup_routes.scheduled_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                  : null;
+                const route = day.pickup_routes;
+                const isEditing = editingShoppingDay === day.id;
+                const actualLbs = (route?.actual_total_bags || 0) * 20;
+                const estimatedLbs = (route?.estimated_total_bags || 0) * 20;
 
                 return (
-                  <div key={day.id} className="border border-gray-200 rounded-xl p-5">
+                  <div key={day.id} className={`border rounded-xl p-5 ${day.is_sunday ? "border-purple-300 bg-purple-50" : "border-gray-200"}`}>
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h3 className="font-bold text-nct-navy text-lg">{dateStr}</h3>
-                        {pickupDateStr && (
-                          <p className="text-xs text-gray-400">Pickup route: {pickupDateStr}</p>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-nct-navy text-lg">{dateStr}</h3>
+                          {day.is_sunday && (
+                            <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Sunday</span>
+                          )}
+                        </div>
+                        {route && (
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Pickup route: {new Date(route.scheduled_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            {actualLbs > 0 ? ` · ${actualLbs.toLocaleString()} lbs actual` : estimatedLbs > 0 ? ` · ~${estimatedLbs.toLocaleString()} lbs est` : ""}
+                          </p>
+                        )}
+                        {day.admin_notes && (
+                          <p className="text-xs text-yellow-700 bg-yellow-100 rounded px-2 py-0.5 mt-1 inline-block">{day.admin_notes}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[day.status] || "bg-gray-100 text-gray-600"}`}>
                           {day.status}
                         </span>
+                        <button onClick={() => {
+                          if (isEditing) { setEditingShoppingDay(null); }
+                          else {
+                            setEditingShoppingDay(day.id);
+                            setShoppingDayEdits({
+                              wholesale_capacity: day.wholesale_capacity ?? "",
+                              bins_capacity: day.bins_capacity ?? "",
+                              admin_notes: day.admin_notes || "",
+                            });
+                          }
+                        }} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                          {isEditing ? "Done" : "Edit"}
+                        </button>
                         {day.status === "open" && (
-                          <button
-                            onClick={async () => {
-                              await fetch("/api/admin/shopping-days", {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json", ...authHeader },
-                                body: JSON.stringify({ id: day.id, status: "closed" }),
-                              });
-                              fetchShoppingDays();
-                            }}
-                            className="text-xs text-gray-500 underline"
-                          >
-                            Close
-                          </button>
+                          <button onClick={async () => {
+                            await fetch("/api/admin/shopping-days", {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json", ...authHeader },
+                              body: JSON.stringify({ id: day.id, status: "closed" }),
+                            });
+                            fetchShoppingDays();
+                          }} className="text-xs text-gray-500 underline">Close</button>
                         )}
+                        {day.status !== "open" && (
+                          <button onClick={async () => {
+                            await fetch("/api/admin/shopping-days", {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json", ...authHeader },
+                              body: JSON.stringify({ id: day.id, status: "open" }),
+                            });
+                            fetchShoppingDays();
+                          }} className="text-xs text-green-600 underline">Reopen</button>
+                        )}
+                        <button onClick={() => handleDeleteShoppingDay(day.id)} className="text-xs text-red-400 hover:text-red-600">✕</button>
                       </div>
                     </div>
+
+                    {/* Edit panel */}
+                    {isEditing && (
+                      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Edit Capacities & Notes</p>
+                        <div className="grid grid-cols-3 gap-3 mb-3">
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-0.5">
+                              Wholesale spots
+                              {day.wholesale_capacity == null && (
+                                <span className="text-gray-400 ml-1">(auto: {day.wholesale_capacity_auto})</span>
+                              )}
+                            </label>
+                            <input type="number" min="0" value={shoppingDayEdits.wholesale_capacity}
+                              onChange={(e) => setShoppingDayEdits((p) => ({ ...p, wholesale_capacity: e.target.value }))}
+                              placeholder={`Auto (${day.wholesale_capacity_auto})`}
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                            <p className="text-xs text-gray-400 mt-0.5">Blank = 1 spot per 500 lbs collected</p>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-0.5">
+                              Bins cap
+                              {day.bins_capacity == null && (
+                                <span className="text-gray-400 ml-1">(default: {day.is_sunday ? "unlimited" : "10"})</span>
+                              )}
+                            </label>
+                            <input type="number" min="0" value={shoppingDayEdits.bins_capacity}
+                              onChange={(e) => setShoppingDayEdits((p) => ({ ...p, bins_capacity: e.target.value }))}
+                              placeholder={day.is_sunday ? "Unlimited" : "10"}
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                            <p className="text-xs text-gray-400 mt-0.5">Blank = {day.is_sunday ? "unlimited (Sunday)" : "10 (weekday)"}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-0.5">Admin note (shown on day card)</label>
+                            <input type="text" value={shoppingDayEdits.admin_notes}
+                              onChange={(e) => setShoppingDayEdits((p) => ({ ...p, admin_notes: e.target.value }))}
+                              placeholder="e.g. Closed for Memorial Day"
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                          </div>
+                        </div>
+                        <button onClick={() => handleSaveShoppingDayEdits(day.id)} disabled={shoppingDayLoading}
+                          className="bg-nct-navy hover:bg-nct-navy-dark text-white text-sm font-bold py-1.5 px-5 rounded transition-colors disabled:opacity-50">
+                          {shoppingDayLoading ? "Saving…" : "Save Changes"}
+                        </button>
+                      </div>
+                    )}
 
                     <div className="grid md:grid-cols-3 gap-4">
                       {/* Wholesale slot */}
@@ -1765,9 +1953,14 @@ export default function AdminPage() {
                             <p className="font-bold text-nct-navy">Wholesale</p>
                             <p className="text-xs text-gray-500">10:00 AM – 4:00 PM · $0.30/lb</p>
                           </div>
-                          <span className="text-sm font-bold text-nct-navy">
-                            {day.slots.wholesale.booked}/{day.slots.wholesale.capacity}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-nct-navy">
+                              {day.slots.wholesale.booked}/{day.slots.wholesale.capacity}
+                            </span>
+                            {day.wholesale_capacity == null && (
+                              <p className="text-xs text-gray-400">auto</p>
+                            )}
+                          </div>
                         </div>
                         {day.slots.wholesale.bookings.length === 0 ? (
                           <p className="text-xs text-gray-400">No bookings yet.</p>
@@ -1793,9 +1986,12 @@ export default function AdminPage() {
                             <p className="font-bold text-nct-navy">Bins</p>
                             <p className="text-xs text-gray-500">12:00 PM – 4:00 PM · $2.00/lb</p>
                           </div>
-                          <span className="text-sm font-bold text-nct-navy">
-                            {day.slots.bins.booked}/{day.slots.bins.capacity}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-nct-navy">
+                              {day.slots.bins.booked}{day.slots.bins.capacity === 999 ? "" : `/${day.slots.bins.capacity}`}
+                            </span>
+                            <p className="text-xs text-gray-400">{day.slots.bins.capacity === 999 ? "no cap" : ""}</p>
+                          </div>
                         </div>
                         {day.slots.bins.bookings.length === 0 ? (
                           <p className="text-xs text-gray-400">No bookings yet.</p>
