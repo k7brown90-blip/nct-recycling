@@ -541,6 +541,30 @@ export default function AdminPage() {
                         {isNonprofit && (
                           <div className="px-5 py-4">
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Donation Lots</p>
+
+                            {/* Donation summary */}
+                            {npLots.length > 0 && (() => {
+                              const totalPieces = npLots.reduce((s, l) => s + (l.piece_count || 0), 0);
+                              const totalValue = npLots.reduce((s, l) => s + parseFloat(l.total_value || 0), 0);
+                              const pending = npLots.filter((l) => l.receipt_status === "pending_receipt").length;
+                              return (
+                                <div className="grid grid-cols-3 gap-3 mb-4">
+                                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                                    <p className="text-xl font-bold text-nct-navy">{totalPieces.toLocaleString()}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">Total Pieces</p>
+                                  </div>
+                                  <div className="bg-green-50 rounded-lg p-3 text-center">
+                                    <p className="text-xl font-bold text-green-700">${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">Total Value</p>
+                                  </div>
+                                  <div className={`rounded-lg p-3 text-center ${pending > 0 ? "bg-yellow-50" : "bg-gray-50"}`}>
+                                    <p className={`text-xl font-bold ${pending > 0 ? "text-yellow-700" : "text-gray-400"}`}>{pending}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">Awaiting Receipt</p>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             <form onSubmit={handleLogLot} className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
                               <div className="grid grid-cols-3 gap-2 mb-2">
                                 <div>
