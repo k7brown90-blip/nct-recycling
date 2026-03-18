@@ -5,6 +5,8 @@ import SignOutButton from "@/components/SignOutButton";
 import BagCountForm from "@/components/BagCountForm";
 import AppointmentRequestForm from "@/components/AppointmentRequestForm";
 import NonprofitBinsBooker from "@/components/NonprofitBinsBooker";
+import AgreementDownloadButton from "@/components/AgreementDownloadButton";
+import TaxReceiptSection from "@/components/TaxReceiptSection";
 
 export const metadata = { title: "Nonprofit Partner Portal" };
 
@@ -32,19 +34,15 @@ export default async function NonprofitDashboard() {
 
   const [
     { data: app },
-    { data: receipts },
     { data: bagHistory },
     { data: appointments },
   ] = await Promise.all([
     db.from("nonprofit_applications").select("*").eq("id", profile.application_id).maybeSingle(),
-    db.from("tax_receipts").select("*").eq("application_id", profile.application_id).order("created_at", { ascending: false }),
     db.from("bag_counts").select("*").eq("nonprofit_id", profile.application_id).order("created_at", { ascending: false }).limit(5),
     db.from("exchange_appointments").select("*").eq("nonprofit_id", profile.application_id).order("created_at", { ascending: false }),
   ]);
 
   const currentBagCount = bagHistory?.[0]?.bag_count ?? null;
-  const totalPieces = receipts?.reduce((sum, r) => sum + (r.piece_count || 0), 0) ?? 0;
-  const totalValue = receipts?.reduce((sum, r) => sum + parseFloat(r.total_value || 0), 0) ?? 0;
   const pendingAppt = appointments?.find((a) => a.status === "requested" || a.status === "scheduled");
 
   return (
@@ -163,51 +161,8 @@ export default async function NonprofitDashboard() {
         </div>
       )}
 
-      {/* Tax receipt summary */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-        <h2 className="font-bold text-nct-navy text-lg mb-4">Donation Summary</h2>
-        <div className="grid grid-cols-2 gap-4 text-center mb-4">
-          <div className="bg-blue-50 rounded-lg p-4">
-            <p className="text-3xl font-bold text-nct-navy">{totalPieces.toLocaleString()}</p>
-            <p className="text-sm text-gray-500 mt-1">Total Pieces Donated</p>
-          </div>
-          <div className="bg-green-50 rounded-lg p-4">
-            <p className="text-3xl font-bold text-green-700">
-              ${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-            </p>
-            <p className="text-sm text-gray-500 mt-1">Total Tax Receipt Value</p>
-          </div>
-        </div>
-        <p className="text-xs text-gray-400 text-center">
-          Donations valued at $5.00/piece per NCT Recycling records per IRC § 170.
-        </p>
-        {receipts && receipts.length > 0 && (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b border-gray-100">
-                  <th className="pb-2 text-gray-500 font-medium">Date</th>
-                  <th className="pb-2 text-gray-500 font-medium">Pieces</th>
-                  <th className="pb-2 text-gray-500 font-medium">Value</th>
-                  <th className="pb-2 text-gray-500 font-medium">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {receipts.map((r) => (
-                  <tr key={r.id}>
-                    <td className="py-2 text-gray-700">{new Date(r.created_at).toLocaleDateString()}</td>
-                    <td className="py-2 font-medium">{r.piece_count?.toLocaleString() ?? "—"}</td>
-                    <td className="py-2 text-green-700 font-medium">
-                      ${parseFloat(r.total_value || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-2 text-gray-500">{r.notes || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Tax receipt section */}
+      <TaxReceiptSection />
 
       {/* Agreement on file */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
@@ -230,6 +185,7 @@ export default async function NonprofitDashboard() {
             </div>
           )}
         </dl>
+        <AgreementDownloadButton />
       </div>
 
       {/* Contact */}

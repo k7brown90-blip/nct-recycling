@@ -1,59 +1,11 @@
 "use client";
 import { useState } from "react";
+import { CO_OP_AGREEMENT } from "@/lib/agreement-text";
 
 const CATEGORIES = [
   "Women's Clothing", "Men's Clothing", "Kids' Clothing",
   "Shoes", "Outerwear", "Bedding & Linens", "General Mixed", "Other",
 ];
-
-const CO_OP_AGREEMENT = `NCT RECYCLING LLC — CO-OP NETWORK PARTICIPATION AGREEMENT
-
-IMPORTANT — READ CAREFULLY BEFORE SIGNING
-
-This is a legally binding contract. By signing below, the Participating Organization acknowledges that it has read, understood, and agrees to all terms and conditions contained in this Agreement, including the liability waiver in Section 9.
-
-1. PARTIES
-NCT Recycling LLC ("NCT Recycling"), located at 6108 South College Ave, STE C, Fort Collins, Colorado 80525.
-Participating Organization ("Partner"), the nonprofit or community organization identified by signature below.
-
-2. PURPOSE
-The NCT Recycling Co-Op Network connects organizations through a coordinated system for textile redistribution. NCT Recycling serves as the central coordinator and logistical moderator.
-
-3. ROLE OF PARTICIPATING ORGANIZATIONS
-Partner agrees to: provide donated textiles to NCT Recycling at no cost; meet pickup minimums (1,000 lbs minimum per scheduled pickup); coordinate staff or volunteers for on-site selection when applicable; communicate categories of need; and participate in good faith.
-
-4. EXCHANGE PROGRAM
-Approved Partners may source inventory from NCT Recycling through the Exchange Program. Two scheduling options are available:
-  (a) In-Person — Bins Visit: Partner sends up to 2 designated volunteers to NCT Recycling's Bins Area during available shopping days. Bins are restocked from incoming loads and available 12:00 PM – 4:00 PM on scheduled shopping days. Partner schedules visits through the Partner Portal; visits are subject to availability (maximum 2 nonprofit volunteer spots per shopping day).
-  (b) Delivery: NCT Recycling curates a textile lot and delivers or ships it to Partner. The inventory is provided at no charge; Partner is responsible for covering NCT Recycling's actual labor (sorting and curation) and delivery costs, passed through at cost with no markup. Delivery scheduling is managed through the Partner Portal.
-Partner acknowledges that shopping day availability is dependent on NCT Recycling's pickup route schedule and is not guaranteed on any specific day.
-
-5. PICKUP MINIMUMS
-Minimum 1,000 lbs of donated textiles required per scheduled pickup. Loads under 4,000 lbs must be scheduled within an existing NCT route. Loads 4,000 lbs or more may be scheduled independently.
-
-6. VALUE EXCHANGE
-Partner provides donated textiles at no cost. In exchange, Partner receives warehouse sourcing access, logistics coordination, and community visibility. NCT Recycling donates textile inventory to Partner at no charge, valued at $5.00 per piece for tax receipt purposes. Partner agrees to issue NCT Recycling a written tax donation receipt for each lot received and upload it to their partner portal within 30 days.
-
-7. BAG COUNT REPORTING
-Partner agrees to maintain an accurate bag count in their partner portal, updating it whenever their stored donation volume changes. This information is used to plan NCT Recycling pickup routes. Failure to keep bag counts current may result in missed or delayed pickups.
-
-8. 501(c)(3) VERIFICATION
-Participation is limited to organizations with verified 501(c)(3) status. Partner must provide an IRS determination letter upon application and notify NCT Recycling of any change in tax-exempt status.
-
-9. LIABILITY WAIVER AND RELEASE OF CLAIMS
-Partner, on behalf of itself and all staff and volunteers it sends to the facility, hereby releases, waives, discharges, and covenants not to sue NCT Recycling LLC, its members, managers, officers, employees, agents, successors, and assigns from any and all claims arising out of: any person's presence on NCT Recycling's premises on behalf of Partner; participation in the Program; any injury to person or property on the premises; and transportation to/from NCT Recycling's facilities. This release includes claims arising from ordinary negligence. It does NOT apply to willful and wanton misconduct by NCT Recycling.
-
-10. INDEMNIFICATION
-Partner agrees to indemnify, defend, and hold harmless NCT Recycling from any claims, damages, losses, costs, and expenses arising from: any act or negligence of Partner's staff or volunteers on the premises; Partner's violation of this Agreement; any third-party claims from Partner's use or distribution of materials received through the co-op; and any injury to Partner's staff, volunteers, or guests on the premises.
-
-11. WAREHOUSE RULES
-All visitors must check in with staff upon arrival. Closed-toe shoes required. No smoking or vaping. Children must be supervised. Access restricted to approved areas unless authorized in writing. Forklift safety: when bale movement is announced, all persons must stop and remain in place until forklift is parked and engine off.
-
-12. TERM AND TERMINATION
-Participation may be terminated by either party with 60 days written notice.
-
-13. GOVERNING LAW
-State of Colorado. Disputes in Larimer County.`;
 
 export default function NonprofitApplyPage() {
   const [step, setStep] = useState(1);

@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { generateAgreementPDF } from "@/lib/generate-agreement-pdf";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 
@@ -63,6 +64,8 @@ export async function POST(request) {
       if (!uploadError) irs_letter_url = `irs-letters/${fileName}`;
     }
 
+    const contract_agreed_at = new Date().toISOString();
+
     const { data, error } = await supabase
       .from("nonprofit_applications")
       .insert({
@@ -73,7 +76,7 @@ export async function POST(request) {
         estimated_donation_lbs,
         categories_needed: categories_needed.length ? categories_needed : null,
         feature_consent, contract_agreed,
-        contract_agreed_at: new Date().toISOString(),
+        contract_agreed_at,
         contract_signed_name, authorized_title,
         irs_letter_url, status: "pending",
       })
@@ -83,6 +86,24 @@ export async function POST(request) {
     if (error) {
       console.error("Nonprofit insert error:", error);
       return NextResponse.json({ error: "Failed to submit application." }, { status: 500 });
+    }
+
+    // Generate and store signed agreement PDF
+    try {
+      const pdfBytes = await generateAgreementPDF({
+        org_name, contact_name, authorized_title,
+        contract_signed_name, contract_agreed_at,
+        ein, email, application_id: data.id,
+      });
+      await supabase.storage
+        .from("nonprofit-docs")
+        .upload(`agreements/${data.id}.pdf`, pdfBytes, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+    } catch (pdfErr) {
+      console.error("PDF generation error:", pdfErr);
+      // Don't block submission if PDF fails
     }
 
     // Notify NCT Recycling

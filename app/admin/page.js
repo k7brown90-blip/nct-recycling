@@ -12,7 +12,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days"];
+const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots"];
 
 export default function AdminPage() {
   const [secret, setSecret] = useState("");
@@ -55,6 +55,18 @@ export default function AdminPage() {
   const [shoppingDays, setShoppingDays] = useState([]);
   const [shoppingFilter, setShoppingFilter] = useState("upcoming");
 
+  // Donation lots state (tab overview)
+  const [lots, setLots] = useState([]);
+  const [lotNonprofits, setLotNonprofits] = useState([]);
+  const [lotForm, setLotForm] = useState({ application_id: "", piece_count: "", lot_date: "", notes: "" });
+  const [lotLoading, setLotLoading] = useState(false);
+
+  // Inline lot state (within selected nonprofit card)
+  const [npLots, setNpLots] = useState([]);
+  const [npLotsLoading, setNpLotsLoading] = useState(false);
+  const [inlineLot, setInlineLot] = useState({ piece_count: "", lot_date: "", notes: "" });
+  const [inlineLotLoading, setInlineLotLoading] = useState(false);
+
   const isNonprofit = section === "Nonprofit Apps";
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
 
@@ -93,6 +105,27 @@ export default function AdminPage() {
     setLoading(false);
   }, [secret, apptFilter]);
 
+  const fetchNpLots = useCallback(async (applicationId) => {
+    setNpLotsLoading(true);
+    const res = await fetch(`/api/admin/tax-receipts?application_id=${applicationId}`, { headers: authHeader });
+    const json = await res.json();
+    setNpLots(json.lots || []);
+    setNpLotsLoading(false);
+  }, [secret]);
+
+  const fetchLots = useCallback(async () => {
+    setLoading(true);
+    const [lotsRes, npRes] = await Promise.all([
+      fetch("/api/admin/tax-receipts", { headers: authHeader }),
+      fetch("/api/admin/bag-levels", { headers: authHeader }),
+    ]);
+    const lotsJson = await lotsRes.json();
+    const npJson = await npRes.json();
+    setLots(lotsJson.lots || []);
+    setLotNonprofits(npJson.nonprofits || []);
+    setLoading(false);
+  }, [secret]);
+
   const fetchShoppingDays = useCallback(async () => {
     setLoading(true);
     const upcoming = shoppingFilter === "upcoming";
@@ -110,7 +143,16 @@ export default function AdminPage() {
     if (section === "Routes") fetchRoutes();
     if (section === "Exchange Appts") fetchAppointments();
     if (section === "Shopping Days") fetchShoppingDays();
-  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays]);
+    if (section === "Donation Lots") fetchLots();
+  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots]);
+
+  useEffect(() => {
+    if (isNonprofit && selected?.id) {
+      setNpLots([]);
+      setInlineLot({ piece_count: "", lot_date: "", notes: "" });
+      fetchNpLots(selected.id);
+    }
+  }, [selected?.id, isNonprofit, fetchNpLots]);
 
   async function handleAuth(e) {
     e.preventDefault();
@@ -170,6 +212,75 @@ export default function AdminPage() {
     const res = await fetch(`${endpoint}?file=${encodeURIComponent(fileName)}`, { headers: authHeader });
     const json = await res.json();
     if (json.url) window.open(json.url, "_blank");
+  }
+
+  async function handleLogLot(e) {
+    e.preventDefault();
+    if (!selected || !inlineLot.piece_count) return;
+    setInlineLotLoading(true);
+    const res = await fetch("/api/admin/tax-receipts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ ...inlineLot, application_id: selected.id }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setInlineLot({ piece_count: "", lot_date: "", notes: "" });
+      fetchNpLots(selected.id);
+      setMessage("✅ Donation lot logged.");
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+    setInlineLotLoading(false);
+  }
+
+  async function handleCreateLot(e) {
+    e.preventDefault();
+    if (!lotForm.application_id || !lotForm.piece_count) return;
+    setLotLoading(true); setMessage("");
+    const res = await fetch("/api/admin/tax-receipts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify(lotForm),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setMessage("✅ Donation lot logged.");
+      setLotForm({ application_id: "", piece_count: "", lot_date: "", notes: "" });
+      fetchLots();
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+    setLotLoading(false);
+  }
+
+  async function handleDeleteLot(id) {
+    if (!confirm("Delete this donation lot? This cannot be undone.")) return;
+    const res = await fetch("/api/admin/tax-receipts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) { setMessage("Lot deleted."); fetchLots(); }
+    else setMessage("Delete failed.");
+  }
+
+  async function viewReceiptAsAdmin(lotId) {
+    const res = await fetch("/api/admin/tax-receipts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: lotId }),
+    });
+    const json = await res.json();
+    if (json.url) window.open(json.url, "_blank");
+    else setMessage("No receipt uploaded yet.");
+  }
+
+  async function viewAgreement(applicationId) {
+    const res = await fetch(`/api/admin/nonprofit-agreement?application_id=${applicationId}`, { headers: authHeader });
+    const json = await res.json();
+    if (json.url) window.open(json.url, "_blank");
+    else setMessage("Agreement PDF not found. It may not have been generated yet.");
   }
 
   async function handleCreateRoute() {
@@ -325,29 +436,18 @@ export default function AdminPage() {
               )}
             </div>
 
-            {selected && (
+            {selected && !isNonprofit && (
+              /* ── Reseller card ── */
               <div className="w-96 shrink-0 border border-gray-200 rounded-xl p-5 self-start sticky top-20">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h2 className="font-bold text-nct-navy text-lg">{isNonprofit ? selected.org_name : selected.full_name}</h2>
+                    <h2 className="font-bold text-nct-navy text-lg">{selected.full_name}</h2>
                     <p className="text-sm text-gray-500">{selected.email}</p>
                   </div>
                   <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
                 </div>
-
                 <dl className="space-y-1.5 text-sm mb-4">
-                  {(isNonprofit ? [
-                    ["Contact", selected.contact_name], ["Title", selected.contact_title],
-                    ["Phone", selected.phone], ["Org Type", selected.org_type], ["EIN", selected.ein],
-                    ["Website", selected.website], ["Est. Monthly (lbs)", selected.estimated_donation_lbs],
-                    ["Categories", selected.categories_needed?.join(", ")],
-                    ["Address", [selected.address_street, selected.address_city, selected.address_state, selected.address_zip].filter(Boolean).join(", ")],
-                    ["Pickup Hours", selected.available_pickup_hours], ["Dock Instructions", selected.dock_instructions],
-                    ["Feature Consent", selected.feature_consent ? "Yes" : "No"],
-                    ["Signed As", selected.contract_signed_name],
-                    ["Agreed At", selected.contract_agreed_at ? new Date(selected.contract_agreed_at).toLocaleString() : null],
-                    ["Submitted", new Date(selected.created_at).toLocaleString()],
-                  ] : [
+                  {[
                     ["Business", selected.business_name], ["Phone", selected.phone],
                     ["Program", selected.program_type], ["Platforms", selected.platforms?.join(", ")],
                     ["Website", selected.website], ["Tax License #", selected.tax_license_number],
@@ -355,43 +455,187 @@ export default function AdminPage() {
                     ["Signed As", selected.contract_signed_name],
                     ["Agreed At", selected.contract_agreed_at ? new Date(selected.contract_agreed_at).toLocaleString() : null],
                     ["Submitted", new Date(selected.created_at).toLocaleString()],
-                  ]).filter(([, v]) => v).map(([label, val]) => (
+                  ].filter(([, v]) => v).map(([label, val]) => (
                     <div key={label} className="flex gap-2">
                       <dt className="text-gray-500 w-36 shrink-0">{label}:</dt>
                       <dd className="font-medium break-all">{val}</dd>
                     </div>
                   ))}
                 </dl>
-
-                {isNonprofit && selected.irs_letter_url && (
-                  <button onClick={() => viewDocument(selected.irs_letter_url, "nonprofit-docs")}
-                    className="text-nct-navy underline text-sm mb-4 block">View IRS Letter →</button>
-                )}
-                {!isNonprofit && selected.dr0563_file_url && (
+                {selected.dr0563_file_url && (
                   <button onClick={() => viewDocument(selected.dr0563_file_url, "dr0563")}
                     className="text-nct-navy underline text-sm mb-4 block">View DR 0563 →</button>
                 )}
-
                 <div className="border-t border-gray-200 pt-4 space-y-3">
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
                     placeholder="Admin notes" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                   <div className="flex gap-2">
                     <button onClick={handleApproveAndInvite} disabled={actionLoading || selected.status === "approved"}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">
-                      ✅ Approve & Invite
-                    </button>
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">✅ Approve & Invite</button>
                     <button onClick={() => handleAction("denied")} disabled={actionLoading || selected.status === "denied"}
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">
-                      Deny
-                    </button>
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">Deny</button>
                     <button onClick={() => handleAction("pending")} disabled={actionLoading || selected.status === "pending"}
-                      className="px-3 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Reset to pending">
-                      ↺
-                    </button>
+                      className="px-3 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Reset to pending">↺</button>
                     <button onClick={handleDelete} disabled={actionLoading}
-                      className="px-3 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Delete application">
-                      🗑
+                      className="px-3 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Delete">🗑</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selected && isNonprofit && (
+              /* ── Nonprofit card ── */
+              <div className="w-[460px] shrink-0 border border-gray-200 rounded-xl self-start sticky top-20 max-h-[calc(100vh-140px)] overflow-y-auto">
+
+                {/* Header */}
+                <div className="flex items-start justify-between p-5 border-b border-gray-100">
+                  <div>
+                    <h2 className="font-bold text-nct-navy text-lg">{selected.org_name}</h2>
+                    <p className="text-sm text-gray-500">{selected.email}</p>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full mt-1 inline-block ${STATUS_COLORS[selected.status]}`}>{selected.status}</span>
+                  </div>
+                  <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none mt-1">×</button>
+                </div>
+
+                {/* Organization Details */}
+                <div className="p-5 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Organization Details</p>
+                  <dl className="space-y-1.5 text-sm">
+                    {[
+                      ["Contact", selected.contact_name], ["Title", selected.contact_title],
+                      ["Email", selected.email || "—"], ["Phone", selected.phone || "—"],
+                      ["Org Type", selected.org_type], ["EIN", selected.ein],
+                      ["Website", selected.website],
+                      ["Est. Monthly (lbs)", selected.estimated_donation_lbs],
+                      ["Categories", selected.categories_needed?.join(", ")],
+                      ["Address", [selected.address_street, selected.address_city, selected.address_state, selected.address_zip].filter(Boolean).join(", ")],
+                      ["Pickup Hours", selected.available_pickup_hours],
+                      ["Dock Instructions", selected.dock_instructions],
+                      ["Feature Consent", selected.feature_consent ? "Yes" : "No"],
+                      ["Signed As", selected.contract_signed_name],
+                      ["Agreed At", selected.contract_agreed_at ? new Date(selected.contract_agreed_at).toLocaleString() : null],
+                      ["Submitted", new Date(selected.created_at).toLocaleString()],
+                    ].filter(([, v]) => v).map(([label, val]) => (
+                      <div key={label} className="flex gap-2">
+                        <dt className="text-gray-500 w-36 shrink-0">{label}:</dt>
+                        <dd className="font-medium break-all">{val}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+
+                {/* Documents on File */}
+                <div className="p-5 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Documents on File</p>
+                  <div className="space-y-2">
+                    {selected.irs_letter_url ? (
+                      <button onClick={() => viewDocument(selected.irs_letter_url, "nonprofit-docs")}
+                        className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
+                        <span>📄</span> IRS Determination Letter →
+                      </button>
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">No IRS letter uploaded</p>
+                    )}
+                    <button onClick={() => viewAgreement(selected.id)}
+                      className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
+                      <span>📄</span> Co-Op Participation Agreement (PDF) →
                     </button>
+                    {npLots.filter((l) => l.receipt_status === "uploaded").map((lot) => (
+                      <button key={lot.id} onClick={() => viewReceiptAsAdmin(lot.id)}
+                        className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
+                        <span>🧾</span> Tax Receipt — {lot.piece_count?.toLocaleString()} pcs
+                        {lot.lot_date ? ` (${new Date(lot.lot_date + "T00:00:00").toLocaleDateString()})` : ""} →
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Donation Lots */}
+                <div className="p-5 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Donation Lots</p>
+
+                  {/* Log new lot inline form */}
+                  <form onSubmit={handleLogLot} className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-0.5">Pieces *</label>
+                        <input type="number" min="1"
+                          value={inlineLot.piece_count}
+                          onChange={(e) => setInlineLot((p) => ({ ...p, piece_count: e.target.value }))}
+                          placeholder="e.g. 120"
+                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" required />
+                        {inlineLot.piece_count > 0 && (
+                          <p className="text-xs text-green-600 mt-0.5">
+                            Value: ${(parseInt(inlineLot.piece_count || 0) * 5).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-0.5">Lot Date</label>
+                        <input type="date"
+                          value={inlineLot.lot_date}
+                          onChange={(e) => setInlineLot((p) => ({ ...p, lot_date: e.target.value }))}
+                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                      </div>
+                    </div>
+                    <input type="text"
+                      value={inlineLot.notes}
+                      onChange={(e) => setInlineLot((p) => ({ ...p, notes: e.target.value }))}
+                      placeholder="Notes (optional)"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                    <button type="submit"
+                      disabled={inlineLotLoading || !inlineLot.piece_count}
+                      className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white text-xs font-bold py-2 rounded transition-colors disabled:opacity-50">
+                      {inlineLotLoading ? "Logging…" : "Log Donation Lot →"}
+                    </button>
+                  </form>
+
+                  {/* Existing lots */}
+                  {npLotsLoading ? (
+                    <p className="text-xs text-gray-400">Loading lots…</p>
+                  ) : npLots.length === 0 ? (
+                    <p className="text-xs text-gray-400">No donation lots logged yet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {npLots.map((lot) => (
+                        <div key={lot.id} className="flex items-center justify-between border border-gray-100 rounded-lg px-3 py-2 text-xs">
+                          <div className="min-w-0">
+                            <span className="font-semibold text-nct-navy">{lot.piece_count?.toLocaleString()} pieces</span>
+                            <span className="text-green-700 font-medium ml-2">
+                              ${parseFloat(lot.total_value || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-gray-400 ml-2">
+                              {lot.lot_date ? new Date(lot.lot_date + "T00:00:00").toLocaleDateString() : "—"}
+                            </span>
+                            {lot.notes && <span className="text-gray-400 ml-2 truncate">· {lot.notes}</span>}
+                          </div>
+                          <div className="flex items-center gap-2 ml-2 shrink-0">
+                            <span className={`px-1.5 py-0.5 rounded-full font-medium ${lot.receipt_status === "uploaded" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                              {lot.receipt_status === "uploaded" ? "✓ Receipt" : "Pending"}
+                            </span>
+                            <button onClick={() => handleDeleteLot(lot.id)}
+                              className="text-red-400 hover:text-red-600 font-bold">✕</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Admin Actions */}
+                <div className="p-5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Admin Actions</p>
+                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+                    placeholder="Admin notes" className="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-3" />
+                  <div className="flex gap-2">
+                    <button onClick={handleApproveAndInvite} disabled={actionLoading || selected.status === "approved"}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">✅ Approve & Invite</button>
+                    <button onClick={() => handleAction("denied")} disabled={actionLoading || selected.status === "denied"}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">Deny</button>
+                    <button onClick={() => handleAction("pending")} disabled={actionLoading || selected.status === "pending"}
+                      className="px-3 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Reset to pending">↺</button>
+                    <button onClick={handleDelete} disabled={actionLoading}
+                      className="px-3 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Delete application">🗑</button>
                   </div>
                 </div>
               </div>
@@ -667,6 +911,130 @@ export default function AdminPage() {
                   {apptLoading ? "Scheduling…" : "Confirm & Notify Nonprofit"}
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== DONATION LOTS ===== */}
+      {section === "Donation Lots" && (
+        <div>
+          {/* Log new lot form */}
+          <div className="border-2 border-nct-navy rounded-xl p-5 mb-6 bg-blue-50">
+            <h3 className="font-bold text-nct-navy text-lg mb-4">Log Donation Lot</h3>
+            <form onSubmit={handleCreateLot} className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Nonprofit *</label>
+                <select
+                  value={lotForm.application_id}
+                  onChange={(e) => setLotForm((p) => ({ ...p, application_id: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  required
+                >
+                  <option value="">Select nonprofit…</option>
+                  {lotNonprofits.map((n) => (
+                    <option key={n.id} value={n.id}>{n.org_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Piece Count *</label>
+                <input
+                  type="number" min="1"
+                  value={lotForm.piece_count}
+                  onChange={(e) => setLotForm((p) => ({ ...p, piece_count: e.target.value }))}
+                  placeholder="e.g. 120"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  required
+                />
+                {lotForm.piece_count > 0 && (
+                  <p className="text-xs text-green-700 mt-1">
+                    Value: ${(parseInt(lotForm.piece_count || 0) * 5).toLocaleString()}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Lot Date</label>
+                <input
+                  type="date"
+                  value={lotForm.lot_date}
+                  onChange={(e) => setLotForm((p) => ({ ...p, lot_date: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                <input
+                  type="text"
+                  value={lotForm.notes}
+                  onChange={(e) => setLotForm((p) => ({ ...p, notes: e.target.value }))}
+                  placeholder="e.g. Spring lot #1, winter coats mix"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="col-span-2">
+                <button
+                  type="submit"
+                  disabled={lotLoading || !lotForm.application_id || !lotForm.piece_count}
+                  className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-2.5 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {lotLoading ? "Saving…" : "Log Donation Lot"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Lots list */}
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-500">All logged donation lots across nonprofits.</p>
+            <button onClick={fetchLots} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
+          </div>
+
+          {loading ? <p className="text-gray-500 text-sm">Loading…</p>
+           : lots.length === 0 ? <p className="text-gray-500 text-sm">No lots logged yet.</p>
+           : (
+            <div className="space-y-2">
+              {lots.map((lot) => (
+                <div key={lot.id} className="border border-gray-200 rounded-xl p-4 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-nct-navy">{lot.nonprofit_applications?.org_name}</p>
+                    <p className="text-sm text-gray-600">
+                      {lot.piece_count?.toLocaleString()} pieces
+                      {" · "}
+                      <span className="text-green-700 font-medium">
+                        ${parseFloat(lot.total_value || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      </span>
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {lot.lot_date ? new Date(lot.lot_date + "T00:00:00").toLocaleDateString() : "No date"}
+                      {lot.notes ? ` · ${lot.notes}` : ""}
+                    </p>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      lot.receipt_status === "uploaded"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-yellow-100 text-yellow-700"
+                    }`}>
+                      {lot.receipt_status === "uploaded" ? "✓ Receipt on file" : "Awaiting receipt"}
+                    </span>
+                    {lot.receipt_status === "uploaded" && (
+                      <button
+                        onClick={() => viewReceiptAsAdmin(lot.id)}
+                        className="text-xs text-nct-navy underline"
+                      >
+                        View
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteLot(lot.id)}
+                      className="text-xs text-red-500 underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
