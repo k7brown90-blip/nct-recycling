@@ -12,7 +12,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots"];
+const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -91,6 +91,29 @@ export default function AdminPage() {
   // Documents dropdown open state
   const [docsOpen, setDocsOpen] = useState(false);
 
+  // Discard accounts state
+  const [discardAccounts, setDiscardAccounts] = useState([]);
+  const [discardLoading, setDiscardLoading] = useState(false);
+  const [selectedDiscard, setSelectedDiscard] = useState(null);
+  const [discardPickups, setDiscardPickups] = useState([]);
+  const [discardPickupsLoading, setDiscardPickupsLoading] = useState(false);
+  const [showNewAccount, setShowNewAccount] = useState(false);
+  const [newAccount, setNewAccount] = useState({
+    org_name: "", address_street: "", address_city: "", address_state: "", address_zip: "",
+    contact_name: "", contact_email: "", contact_phone: "",
+    pickup_frequency: "weekly", rate_per_1000_lbs: "20",
+    min_lbs_weekly: "1000", min_lbs_biweekly: "2500", min_lbs_adhoc: "5000",
+    projected_lbs_week: "", contract_date: "", notes: "",
+  });
+  const [newAccountLoading, setNewAccountLoading] = useState(false);
+  const [pickupForm, setPickupForm] = useState({
+    pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring",
+    accepted: true, rejection_reason: "", notes: "",
+  });
+  const [pickupFormLoading, setPickupFormLoading] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(null); // pickup id being paid
+  const [paymentMethod, setPaymentMethod] = useState("");
+
   // Container pickup requests (FL accounts)
   const [containerRequests, setContainerRequests] = useState([]);
   const [containerLoading, setContainerLoading] = useState(false);
@@ -165,6 +188,22 @@ export default function AdminPage() {
     setContainerLoading(false);
   }, [secret]);
 
+  const fetchDiscardAccounts = useCallback(async () => {
+    setDiscardLoading(true);
+    const res = await fetch("/api/admin/discard-accounts", { headers: authHeader });
+    const json = await res.json();
+    setDiscardAccounts(json.accounts || []);
+    setDiscardLoading(false);
+  }, [secret]);
+
+  const fetchDiscardPickups = useCallback(async (accountId) => {
+    setDiscardPickupsLoading(true);
+    const res = await fetch(`/api/admin/discard-pickups?account_id=${accountId}`, { headers: authHeader });
+    const json = await res.json();
+    setDiscardPickups(json.pickups || []);
+    setDiscardPickupsLoading(false);
+  }, [secret]);
+
   const fetchShoppingDays = useCallback(async () => {
     setLoading(true);
     const upcoming = shoppingFilter === "upcoming";
@@ -183,7 +222,17 @@ export default function AdminPage() {
     if (section === "Exchange Appts") fetchAppointments();
     if (section === "Shopping Days") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
-  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests]);
+    if (section === "Discard Accounts") fetchDiscardAccounts();
+  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts]);
+
+  useEffect(() => {
+    if (selectedDiscard?.id) {
+      setDiscardPickups([]);
+      setPickupForm({ pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring", accepted: true, rejection_reason: "", notes: "" });
+      setMarkingPaid(null);
+      fetchDiscardPickups(selectedDiscard.id);
+    }
+  }, [selectedDiscard?.id, fetchDiscardPickups]);
 
   useEffect(() => {
     setDocsOpen(false);
@@ -411,6 +460,97 @@ export default function AdminPage() {
       body: JSON.stringify({ id }),
     });
     if (res.ok) { setMessage("Request deleted."); fetchContainerRequests(); }
+    else setMessage("Delete failed.");
+  }
+
+  // ── Discard account helpers ──
+  function calcDiscardPayment(weight_lbs, load_type, account) {
+    if (!account || !weight_lbs) return 0;
+    const freq = account.pickup_frequency;
+    const min = load_type === "single_run" ? account.min_lbs_adhoc
+      : freq === "weekly" ? account.min_lbs_weekly : account.min_lbs_biweekly;
+    if (parseFloat(weight_lbs) < min) return 0;
+    return Math.floor(parseFloat(weight_lbs) / 1000) * parseFloat(account.rate_per_1000_lbs);
+  }
+
+  async function handleCreateDiscardAccount(e) {
+    e.preventDefault();
+    setNewAccountLoading(true); setMessage("");
+    const res = await fetch("/api/admin/discard-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        ...newAccount,
+        rate_per_1000_lbs: parseFloat(newAccount.rate_per_1000_lbs) || 20,
+        min_lbs_weekly:    parseInt(newAccount.min_lbs_weekly)    || 1000,
+        min_lbs_biweekly:  parseInt(newAccount.min_lbs_biweekly)  || 2500,
+        min_lbs_adhoc:     parseInt(newAccount.min_lbs_adhoc)     || 5000,
+        projected_lbs_week: newAccount.projected_lbs_week ? parseInt(newAccount.projected_lbs_week) : null,
+      }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setMessage("✅ Account created.");
+      setShowNewAccount(false);
+      setNewAccount({ org_name: "", address_street: "", address_city: "", address_state: "", address_zip: "", contact_name: "", contact_email: "", contact_phone: "", pickup_frequency: "weekly", rate_per_1000_lbs: "20", min_lbs_weekly: "1000", min_lbs_biweekly: "2500", min_lbs_adhoc: "5000", projected_lbs_week: "", contract_date: "", notes: "" });
+      fetchDiscardAccounts();
+    } else { setMessage(`Error: ${json.error}`); }
+    setNewAccountLoading(false);
+  }
+
+  async function handleDeleteDiscardAccount(id) {
+    if (!confirm("Delete this discard account and all its pickup records? Cannot be undone.")) return;
+    const res = await fetch("/api/admin/discard-accounts", { method: "DELETE", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ id }) });
+    if (res.ok) { setMessage("Account deleted."); setSelectedDiscard(null); fetchDiscardAccounts(); }
+    else setMessage("Delete failed.");
+  }
+
+  async function handleLogPickup(e) {
+    e.preventDefault();
+    if (!selectedDiscard || !pickupForm.pickup_date || !pickupForm.weight_lbs) return;
+    setPickupFormLoading(true); setMessage("");
+    const res = await fetch("/api/admin/discard-pickups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ account_id: selectedDiscard.id, ...pickupForm, weight_lbs: parseFloat(pickupForm.weight_lbs) }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setMessage(`✅ Pickup logged. Amount owed: $${json.amount_owed.toFixed(2)}`);
+      setPickupForm({ pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring", accepted: true, rejection_reason: "", notes: "" });
+      fetchDiscardPickups(selectedDiscard.id);
+    } else { setMessage(`Error: ${json.error}`); }
+    setPickupFormLoading(false);
+  }
+
+  async function handleMarkPaid(pickupId, method) {
+    const res = await fetch("/api/admin/discard-pickups", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: pickupId, payment_status: "paid", payment_method: method || null, payment_date: new Date().toISOString().split("T")[0] }),
+    });
+    if (res.ok) {
+      setMessage("✅ Payment recorded.");
+      setMarkingPaid(null); setPaymentMethod("");
+      fetchDiscardPickups(selectedDiscard.id);
+    } else setMessage("Failed to record payment.");
+  }
+
+  async function handleVoidPickup(pickupId) {
+    if (!confirm("Void this pickup? Payment will be removed.")) return;
+    const res = await fetch("/api/admin/discard-pickups", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: pickupId, payment_status: "voided" }),
+    });
+    if (res.ok) { setMessage("Pickup voided."); fetchDiscardPickups(selectedDiscard.id); }
+    else setMessage("Failed.");
+  }
+
+  async function handleDeletePickup(pickupId) {
+    if (!confirm("Delete this pickup record? Cannot be undone.")) return;
+    const res = await fetch("/api/admin/discard-pickups", { method: "DELETE", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ id: pickupId }) });
+    if (res.ok) { setMessage("Record deleted."); fetchDiscardPickups(selectedDiscard.id); }
     else setMessage("Delete failed.");
   }
 
@@ -1706,6 +1846,424 @@ export default function AdminPage() {
           )}
         </div>
       )}
+      {/* ===== DISCARD ACCOUNTS ===== */}
+      {section === "Discard Accounts" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">Organizations that sell discard directly instead of joining the co-op.</p>
+            <div className="flex gap-2">
+              <button onClick={fetchDiscardAccounts} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
+              <button onClick={() => setShowNewAccount((v) => !v)}
+                className="bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-5 py-2 rounded-full text-sm transition-colors">
+                {showNewAccount ? "Cancel" : "+ New Account"}
+              </button>
+            </div>
+          </div>
+
+          {/* New account form */}
+          {showNewAccount && (
+            <form onSubmit={handleCreateDiscardAccount} className="border-2 border-nct-gold rounded-xl p-5 mb-6 bg-yellow-50 space-y-4">
+              <h3 className="font-bold text-nct-navy text-lg">New Discard Purchase Account</h3>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Organization Name *</label>
+                  <input type="text" required value={newAccount.org_name}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, org_name: e.target.value }))}
+                    placeholder="e.g. Denver Rescue Mission"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Street Address</label>
+                  <input type="text" value={newAccount.address_street}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, address_street: e.target.value }))}
+                    placeholder="123 Main St"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">City</label>
+                  <input type="text" value={newAccount.address_city}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, address_city: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">State</label>
+                    <input type="text" value={newAccount.address_state} maxLength={2}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, address_state: e.target.value }))}
+                      placeholder="CO"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">ZIP</label>
+                    <input type="text" value={newAccount.address_zip}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, address_zip: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Contact Name</label>
+                  <input type="text" value={newAccount.contact_name}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, contact_name: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
+                  <input type="email" value={newAccount.contact_email}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, contact_email: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Contact Phone</label>
+                  <input type="tel" value={newAccount.contact_phone}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, contact_phone: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Pickup Frequency</label>
+                  <select value={newAccount.pickup_frequency}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, pickup_frequency: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-Weekly</option>
+                    <option value="adhoc">Ad Hoc</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="border-t border-yellow-200 pt-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Agreement Terms</p>
+                <div className="grid grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Rate ($/1,000 lbs)</label>
+                    <input type="number" min="0" step="0.01" value={newAccount.rate_per_1000_lbs}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, rate_per_1000_lbs: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Min lbs (weekly)</label>
+                    <input type="number" min="0" value={newAccount.min_lbs_weekly}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, min_lbs_weekly: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Min lbs (biweekly)</label>
+                    <input type="number" min="0" value={newAccount.min_lbs_biweekly}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, min_lbs_biweekly: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Min lbs (ad hoc)</label>
+                    <input type="number" min="0" value={newAccount.min_lbs_adhoc}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, min_lbs_adhoc: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Projected lbs/week</label>
+                    <input type="number" min="0" value={newAccount.projected_lbs_week}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, projected_lbs_week: e.target.value }))}
+                      placeholder="Optional estimate"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Contract Date</label>
+                    <input type="date" value={newAccount.contract_date}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, contract_date: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                  <textarea rows={2} value={newAccount.notes}
+                    onChange={(e) => setNewAccount((p) => ({ ...p, notes: e.target.value }))}
+                    placeholder="Any relevant notes about this account"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+
+              <button type="submit" disabled={newAccountLoading || !newAccount.org_name}
+                className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-2.5 rounded-lg transition-colors disabled:opacity-50">
+                {newAccountLoading ? "Creating…" : "Create Discard Account"}
+              </button>
+            </form>
+          )}
+
+          {/* Account list */}
+          {discardLoading ? <p className="text-gray-500 text-sm">Loading…</p>
+           : discardAccounts.length === 0 ? <p className="text-gray-400 text-sm italic">No discard accounts yet.</p>
+           : (
+            <div className="space-y-2">
+              {discardAccounts.map((acct) => {
+                const isExpanded = selectedDiscard?.id === acct.id;
+                return (
+                  <div key={acct.id} className={`border rounded-xl overflow-hidden transition-colors ${isExpanded ? "border-nct-navy" : "border-gray-200"}`}>
+
+                    {/* Collapsed header */}
+                    <button
+                      onClick={() => setSelectedDiscard(isExpanded ? null : acct)}
+                      className="w-full text-left px-5 py-4 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900">{acct.org_name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {acct.contact_name ? `${acct.contact_name} · ` : ""}
+                            {acct.pickup_frequency} · ${acct.rate_per_1000_lbs}/1,000 lbs
+                            {acct.contact_email ? ` · ${acct.contact_email}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${acct.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                            {acct.status}
+                          </span>
+                          <span className="text-gray-400 text-xs">{isExpanded ? "▲" : "▼"}</span>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Expanded body */}
+                    {isExpanded && (
+                      <div className="border-t border-gray-100 divide-y divide-gray-100">
+
+                        {/* Account details */}
+                        <div className="px-5 py-4">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Account Details</p>
+                          <dl className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
+                            {[
+                              ["Address", [acct.address_street, acct.address_city, acct.address_state, acct.address_zip].filter(Boolean).join(", ")],
+                              ["Contact", acct.contact_name],
+                              ["Email", acct.contact_email],
+                              ["Phone", acct.contact_phone],
+                              ["Frequency", acct.pickup_frequency],
+                              ["Rate", `$${acct.rate_per_1000_lbs} per 1,000 lbs`],
+                              ["Min (weekly)", acct.min_lbs_weekly ? `${acct.min_lbs_weekly.toLocaleString()} lbs` : null],
+                              ["Min (biweekly)", acct.min_lbs_biweekly ? `${acct.min_lbs_biweekly.toLocaleString()} lbs` : null],
+                              ["Min (ad hoc)", acct.min_lbs_adhoc ? `${acct.min_lbs_adhoc.toLocaleString()} lbs` : null],
+                              ["Projected/wk", acct.projected_lbs_week ? `${acct.projected_lbs_week.toLocaleString()} lbs` : null],
+                              ["Contract Date", acct.contract_date ? new Date(acct.contract_date + "T00:00:00").toLocaleDateString() : null],
+                              ["Notes", acct.notes],
+                            ].filter(([, v]) => v).map(([label, val]) => (
+                              <div key={label} className="flex gap-2">
+                                <dt className="text-gray-500 w-32 shrink-0">{label}:</dt>
+                                <dd className="font-medium break-all">{val}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+
+                        {/* Financial summary */}
+                        {(() => {
+                          const pending = discardPickups.filter((p) => p.payment_status === "pending");
+                          const paid = discardPickups.filter((p) => p.payment_status === "paid");
+                          const outstanding = pending.reduce((s, p) => s + parseFloat(p.amount_owed || 0), 0);
+                          const totalPaid = paid.reduce((s, p) => s + parseFloat(p.amount_owed || 0), 0);
+                          const totalLbs = discardPickups.filter((p) => p.accepted !== false).reduce((s, p) => s + parseFloat(p.weight_lbs || 0), 0);
+                          if (discardPickups.length === 0) return null;
+                          return (
+                            <div className="px-5 py-4">
+                              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Financial Summary</p>
+                              <div className="grid grid-cols-3 gap-3">
+                                <div className={`rounded-lg p-3 text-center ${outstanding > 0 ? "bg-yellow-50" : "bg-gray-50"}`}>
+                                  <p className={`text-xl font-bold ${outstanding > 0 ? "text-yellow-700" : "text-gray-400"}`}>
+                                    ${outstanding.toFixed(2)}
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-0.5">Outstanding</p>
+                                </div>
+                                <div className="bg-green-50 rounded-lg p-3 text-center">
+                                  <p className="text-xl font-bold text-green-700">${totalPaid.toFixed(2)}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">Total Paid</p>
+                                </div>
+                                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                                  <p className="text-xl font-bold text-nct-navy">{totalLbs.toLocaleString()}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">Total lbs</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Log pickup form */}
+                        <div className="px-5 py-4">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Log Pickup</p>
+                          <form onSubmit={handleLogPickup} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-0.5">Pickup Date *</label>
+                                <input type="date" required value={pickupForm.pickup_date}
+                                  onChange={(e) => setPickupForm((p) => ({ ...p, pickup_date: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-0.5">Pickup Time</label>
+                                <input type="time" value={pickupForm.pickup_time}
+                                  onChange={(e) => setPickupForm((p) => ({ ...p, pickup_time: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-0.5">Weight (lbs) *</label>
+                                <input type="number" min="0" step="0.1" required value={pickupForm.weight_lbs}
+                                  onChange={(e) => setPickupForm((p) => ({ ...p, weight_lbs: e.target.value }))}
+                                  placeholder="e.g. 3500"
+                                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                {pickupForm.weight_lbs && (
+                                  <p className="text-xs text-green-600 mt-0.5 font-medium">
+                                    Est. owed: ${calcDiscardPayment(pickupForm.weight_lbs, pickupForm.load_type, selectedDiscard).toFixed(2)}
+                                  </p>
+                                )}
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-0.5">Load Type</label>
+                                <select value={pickupForm.load_type}
+                                  onChange={(e) => setPickupForm((p) => ({ ...p, load_type: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                                  <option value="recurring">Recurring</option>
+                                  <option value="single_run">Single Run (Ad Hoc)</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <label className="text-xs font-medium text-gray-600">Load Accepted?</label>
+                              <div className="flex gap-2">
+                                <button type="button"
+                                  onClick={() => setPickupForm((p) => ({ ...p, accepted: true, rejection_reason: "" }))}
+                                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${pickupForm.accepted ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-green-400"}`}>
+                                  Yes
+                                </button>
+                                <button type="button"
+                                  onClick={() => setPickupForm((p) => ({ ...p, accepted: false }))}
+                                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${!pickupForm.accepted ? "bg-red-600 text-white border-red-600" : "bg-white text-gray-600 border-gray-300 hover:border-red-400"}`}>
+                                  No (Rejected)
+                                </button>
+                              </div>
+                            </div>
+                            {!pickupForm.accepted && (
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-0.5">Rejection Reason</label>
+                                <input type="text" value={pickupForm.rejection_reason}
+                                  onChange={(e) => setPickupForm((p) => ({ ...p, rejection_reason: e.target.value }))}
+                                  placeholder="e.g. Non-textile items in load"
+                                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                              </div>
+                            )}
+                            <div>
+                              <label className="text-xs text-gray-500 block mb-0.5">Notes</label>
+                              <input type="text" value={pickupForm.notes}
+                                onChange={(e) => setPickupForm((p) => ({ ...p, notes: e.target.value }))}
+                                placeholder="Optional internal notes"
+                                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                            </div>
+                            <button type="submit" disabled={pickupFormLoading || !pickupForm.pickup_date || !pickupForm.weight_lbs}
+                              className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-50">
+                              {pickupFormLoading ? "Logging…" : "Log Pickup →"}
+                            </button>
+                          </form>
+                        </div>
+
+                        {/* Pickup history */}
+                        <div className="px-5 py-4">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Pickup History</p>
+                          {discardPickupsLoading ? (
+                            <p className="text-xs text-gray-400">Loading…</p>
+                          ) : discardPickups.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">No pickups logged yet.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {discardPickups.map((pu) => (
+                                <div key={pu.id} className={`border rounded-lg p-3 text-sm ${pu.payment_status === "paid" ? "border-green-200 bg-green-50" : pu.payment_status === "voided" ? "border-gray-100 bg-gray-50" : !pu.accepted ? "border-red-100 bg-red-50" : "border-gray-200 bg-white"}`}>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-semibold text-nct-navy">
+                                          {new Date(pu.pickup_date + "T00:00:00").toLocaleDateString()}
+                                          {pu.pickup_time ? ` ${pu.pickup_time}` : ""}
+                                        </span>
+                                        <span className="text-gray-600">{parseFloat(pu.weight_lbs).toLocaleString()} lbs</span>
+                                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${
+                                          pu.payment_status === "paid" ? "bg-green-100 text-green-700"
+                                          : pu.payment_status === "voided" ? "bg-gray-100 text-gray-500"
+                                          : "bg-yellow-100 text-yellow-700"
+                                        }`}>
+                                          {pu.payment_status}
+                                        </span>
+                                        {!pu.accepted && <span className="text-xs bg-red-100 text-red-700 font-semibold px-1.5 py-0.5 rounded-full">Rejected</span>}
+                                        {pu.load_type === "single_run" && <span className="text-xs text-gray-400">Ad Hoc</span>}
+                                      </div>
+                                      <div className="flex items-center gap-3 mt-0.5">
+                                        <span className={`font-bold ${pu.payment_status === "voided" ? "text-gray-400 line-through" : "text-gray-900"}`}>
+                                          ${parseFloat(pu.amount_owed).toFixed(2)}
+                                        </span>
+                                        {pu.payment_method && <span className="text-xs text-gray-400">via {pu.payment_method}</span>}
+                                        {pu.payment_date && <span className="text-xs text-gray-400">paid {new Date(pu.payment_date + "T00:00:00").toLocaleDateString()}</span>}
+                                        {pu.rejection_reason && <span className="text-xs text-red-600">Reason: {pu.rejection_reason}</span>}
+                                      </div>
+                                      {pu.notes && <p className="text-xs text-gray-400 mt-0.5">{pu.notes}</p>}
+                                    </div>
+                                    <div className="flex gap-1.5 shrink-0">
+                                      {pu.payment_status === "pending" && (
+                                        <button
+                                          onClick={() => { setMarkingPaid(pu.id === markingPaid ? null : pu.id); setPaymentMethod(""); }}
+                                          className="text-xs bg-green-600 hover:bg-green-700 text-white px-2.5 py-1 rounded-lg transition-colors">
+                                          Mark Paid
+                                        </button>
+                                      )}
+                                      {pu.payment_status === "pending" && (
+                                        <button onClick={() => handleVoidPickup(pu.id)}
+                                          className="text-xs text-gray-400 hover:text-gray-600 border border-gray-300 px-2 py-1 rounded-lg transition-colors">
+                                          Void
+                                        </button>
+                                      )}
+                                      <button onClick={() => handleDeletePickup(pu.id)}
+                                        className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+                                    </div>
+                                  </div>
+
+                                  {/* Mark paid inline panel */}
+                                  {markingPaid === pu.id && (
+                                    <div className="mt-2 pt-2 border-t border-green-200 flex items-end gap-2">
+                                      <div className="flex-1">
+                                        <label className="text-xs text-gray-500 block mb-0.5">Payment Method</label>
+                                        <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}
+                                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                                          <option value="">Select…</option>
+                                          <option value="check">Check</option>
+                                          <option value="ach">ACH</option>
+                                          <option value="cash">Cash</option>
+                                          <option value="other">Other</option>
+                                        </select>
+                                      </div>
+                                      <button
+                                        onClick={() => handleMarkPaid(pu.id, paymentMethod)}
+                                        className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap">
+                                        ✓ Confirm Payment
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Danger zone */}
+                        <div className="px-5 py-3 flex justify-end">
+                          <button onClick={() => handleDeleteDiscardAccount(acct.id)}
+                            className="text-xs text-red-400 hover:text-red-600 underline transition-colors">
+                            Delete account and all pickups
+                          </button>
+                        </div>
+
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
     </main>
   );
 }
