@@ -92,13 +92,15 @@ export async function GET(request) {
       status: day.status,
       is_sunday: sunday,
       slots: {
-        wholesale: {
-          ...SLOT_INFO.wholesale,
-          capacity: wCap,
-          booked: wholesaleCount,
-          available: wCap - wholesaleCount,
-          my_booking: !!myWholesale,
-        },
+        ...(!sunday && {
+          wholesale: {
+            ...SLOT_INFO.wholesale,
+            capacity: wCap,
+            booked: wholesaleCount,
+            available: wCap - wholesaleCount,
+            my_booking: !!myWholesale,
+          },
+        }),
         bins: {
           ...SLOT_INFO.bins,
           capacity: bCap,

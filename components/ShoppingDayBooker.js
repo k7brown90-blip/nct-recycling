@@ -158,8 +158,10 @@ export default function ShoppingDayBooker() {
                 <h3 className="font-bold text-nct-navy">{dateStr}</h3>
                 <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full capitalize">{day.status}</span>
               </div>
-              <div className="grid md:grid-cols-2 gap-4">
-                <SlotCard type="wholesale" slot={day.slots.wholesale} dayId={day.id} onBook={handleBook} onCancel={handleCancel} loading={actionLoading} />
+              <div className={day.is_sunday ? "" : "grid md:grid-cols-2 gap-4"}>
+                {!day.is_sunday && (
+                  <SlotCard type="wholesale" slot={day.slots.wholesale} dayId={day.id} onBook={handleBook} onCancel={handleCancel} loading={actionLoading} />
+                )}
                 <SlotCard type="bins" slot={day.slots.bins} dayId={day.id} onBook={handleBook} onCancel={handleCancel} loading={actionLoading} />
               </div>
             </div>

@@ -1947,9 +1947,9 @@ export default function AdminPage() {
                       </div>
                     )}
 
-                    <div className="grid md:grid-cols-3 gap-4">
-                      {/* Wholesale slot */}
-                      <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50">
+                    <div className={`grid gap-4 ${day.is_sunday ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+                      {/* Wholesale slot — weekdays only */}
+                      {!day.is_sunday && <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50">
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <p className="font-bold text-nct-navy">Wholesale</p>
@@ -1979,7 +1979,7 @@ export default function AdminPage() {
                             ))}
                           </div>
                         )}
-                      </div>
+                      </div>}
 
                       {/* Bins slot */}
                       <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">

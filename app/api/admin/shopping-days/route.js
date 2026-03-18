@@ -94,11 +94,13 @@ export async function GET(request) {
         return Math.max(1, Math.floor((bags * LBS_PER_BAG) / LBS_PER_WHOLESALE_SPOT));
       })(),
       slots: {
-        wholesale: {
-          booked: wholesale.length, capacity: wCap,
-          available: wCap - wholesale.length,
-          bookings: wholesale,
-        },
+        ...(!sunday && {
+          wholesale: {
+            booked: wholesale.length, capacity: wCap,
+            available: wCap - wholesale.length,
+            bookings: wholesale,
+          },
+        }),
         bins: {
           booked: bins.length, capacity: bCap,
           available: bCap === BINS_SUNDAY_CAP ? null : bCap - bins.length,
