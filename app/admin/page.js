@@ -14,6 +14,25 @@ const STATUS_COLORS = {
 
 const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots"];
 
+// Bag weight constants — 55-gal bag ≈ 30 lbs
+const LBS_PER_BAG = 30;
+const SCHEDULE_LBS = 750;   // trigger: schedule pickup
+const TARGET_LBS   = 1000;  // ideal pickup weight
+const SCHEDULE_BAGS = Math.round(SCHEDULE_LBS / LBS_PER_BAG); // ~25
+const TARGET_BAGS   = Math.round(TARGET_LBS   / LBS_PER_BAG); // ~33
+
+function bagColor(count) {
+  if (count === null || count === undefined) return "text-gray-300";
+  if (count >= TARGET_BAGS)   return "text-red-600";
+  if (count >= SCHEDULE_BAGS) return "text-yellow-600";
+  return "text-green-600";
+}
+function bagBarColor(count) {
+  if (count >= TARGET_BAGS)   return "bg-red-500";
+  if (count >= SCHEDULE_BAGS) return "bg-yellow-400";
+  return "bg-green-500";
+}
+
 export default function AdminPage() {
   const [secret, setSecret] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -696,45 +715,99 @@ export default function AdminPage() {
       {/* ===== BAG LEVELS ===== */}
       {section === "Bag Levels" && (
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-gray-500">Current bag inventory across all approved nonprofit partners.</p>
             <button onClick={fetchBagLevels} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
           </div>
+          {/* Weight reference */}
+          <p className="text-xs text-gray-400 mb-5">
+            ~{LBS_PER_BAG} lbs/bag · Schedule at {SCHEDULE_BAGS} bags (~{SCHEDULE_LBS} lbs) · Ideal pickup at {TARGET_BAGS} bags (~{TARGET_LBS} lbs)
+          </p>
+
           {loading ? <p className="text-gray-500 text-sm">Loading…</p>
            : bagLevels.length === 0 ? <p className="text-gray-500 text-sm">No approved nonprofits yet.</p>
            : (
             <div className="space-y-3">
               {bagLevels
                 .sort((a, b) => (b.bag_count ?? -1) - (a.bag_count ?? -1))
-                .map((np) => (
-                <div key={np.id} className="border border-gray-200 rounded-xl p-4 flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-nct-navy">{np.org_name}</p>
-                    <p className="text-xs text-gray-500">
-                      {[np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ")}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">{np.available_pickup_hours || "Hours not specified"}</p>
-                    {np.dock_instructions && <p className="text-xs text-gray-400">Dock: {np.dock_instructions}</p>}
-                  </div>
-                  <div className="text-center shrink-0">
-                    <p className={`text-3xl font-bold ${np.bag_count === null ? "text-gray-300" : np.bag_count >= 5 ? "text-red-600" : np.bag_count >= 2 ? "text-yellow-600" : "text-green-600"}`}>
-                      {np.bag_count ?? "—"}
-                    </p>
-                    <p className="text-xs text-gray-400">bags</p>
-                    {np.bag_count_updated && (
-                      <p className="text-xs text-gray-300 mt-1">
-                        Updated {new Date(np.bag_count_updated).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
+                .map((np) => {
+                  const count = np.bag_count ?? 0;
+                  const hasCount = np.bag_count !== null;
+                  const estLbs = count * LBS_PER_BAG;
+                  // Bar fills to 120% of target so over-target orgs show overflow
+                  const barMax = TARGET_BAGS * 1.2;
+                  const barPct = hasCount ? Math.min((count / barMax) * 100, 100) : 0;
+                  const schedulePct = (SCHEDULE_BAGS / barMax) * 100;
+                  const targetPct  = (TARGET_BAGS  / barMax) * 100;
+                  const status = !hasCount ? null
+                    : count >= TARGET_BAGS   ? { label: "Needs Pickup",      cls: "bg-red-100 text-red-700" }
+                    : count >= SCHEDULE_BAGS ? { label: "Schedule Pickup",   cls: "bg-yellow-100 text-yellow-700" }
+                    : { label: "Building Up", cls: "bg-green-100 text-green-700" };
+                  return (
+                    <div key={np.id} className="border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-nct-navy">{np.org_name}</p>
+                          <p className="text-xs text-gray-500">
+                            {[np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ")}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">{np.available_pickup_hours || "Hours not specified"}</p>
+                          {np.dock_instructions && <p className="text-xs text-gray-400">Dock: {np.dock_instructions}</p>}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-3xl font-bold leading-none ${bagColor(np.bag_count)}`}>
+                            {np.bag_count ?? "—"}
+                          </p>
+                          <p className="text-xs text-gray-400">bags</p>
+                          {hasCount && <p className="text-xs text-gray-400">~{estLbs.toLocaleString()} lbs</p>}
+                          {np.bag_count_updated && (
+                            <p className="text-xs text-gray-300 mt-1">Updated {new Date(np.bag_count_updated).toLocaleDateString()}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="relative h-3 bg-gray-100 rounded-full overflow-visible">
+                        {/* Filled bar */}
+                        <div
+                          className={`h-3 rounded-full transition-all ${bagBarColor(np.bag_count)}`}
+                          style={{ width: `${barPct}%` }}
+                        />
+                        {/* Schedule threshold marker */}
+                        <div
+                          className="absolute top-0 bottom-0 w-0.5 bg-yellow-500 opacity-70"
+                          style={{ left: `${schedulePct}%` }}
+                          title={`Schedule at ~${SCHEDULE_BAGS} bags`}
+                        />
+                        {/* Target marker */}
+                        <div
+                          className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-70"
+                          style={{ left: `${targetPct}%` }}
+                          title={`Pickup target ~${TARGET_BAGS} bags`}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-300 mt-1">
+                        <span>0</span>
+                        <span className="text-yellow-500">{SCHEDULE_BAGS} bags ({SCHEDULE_LBS} lbs)</span>
+                        <span className="text-red-400">{TARGET_BAGS} bags ({TARGET_LBS} lbs)</span>
+                      </div>
+
+                      {status && (
+                        <div className="mt-2">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${status.cls}`}>
+                            {status.label}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           )}
-          <div className="mt-4 flex gap-4 text-xs text-gray-400">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span> 0–1 bags (low)</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block"></span> 2–4 bags (getting full)</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block"></span> 5+ bags (needs pickup)</span>
+          <div className="mt-5 flex gap-5 text-xs text-gray-400">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> Under {SCHEDULE_BAGS} bags — building up</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block"></span> {SCHEDULE_BAGS}–{TARGET_BAGS - 1} bags — schedule pickup (~{SCHEDULE_LBS}–{TARGET_LBS - 1} lbs)</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> {TARGET_BAGS}+ bags — needs pickup (~{TARGET_LBS}+ lbs)</span>
           </div>
         </div>
       )}
@@ -796,7 +869,7 @@ export default function AdminPage() {
                           <span className="text-gray-400 ml-2 text-xs">{[np.address_city, np.address_state].filter(Boolean).join(", ")}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={`font-bold ${np.bag_count >= 5 ? "text-red-600" : np.bag_count >= 2 ? "text-yellow-600" : "text-green-600"}`}>
+                          <span className={`font-bold ${bagColor(np.bag_count)}`}>
                             {np.bag_count ?? "—"} bags
                           </span>
                           {added ? (
