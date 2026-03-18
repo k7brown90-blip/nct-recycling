@@ -1,96 +1,54 @@
-"use client";
-import { useState } from "react";
-import { createClient } from "@/lib/supabase-browser";
-import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase-server";
+import { createServiceClient } from "@/lib/supabase";
+import { redirect } from "next/navigation";
 import Link from "next/link";
+import AccountSettingsForm from "@/components/AccountSettingsForm";
 
-export default function AccountSettingsPage() {
-  const router = useRouter();
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+export const metadata = { title: "Account Settings | NCT Recycling" };
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    setSuccess(false);
+export default async function AccountSettingsPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Passwords don't match.");
-      return;
-    }
+  const db = createServiceClient();
 
-    setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password });
+  const { data: profile } = await db
+    .from("profiles")
+    .select("role, application_id")
+    .eq("id", user.id)
+    .maybeSingle();
 
-    if (error) {
-      setError("Failed to update password. Please try again.");
-      setLoading(false);
-      return;
-    }
-
-    setSuccess(true);
-    setPassword("");
-    setConfirm("");
-    setLoading(false);
+  let appData = null;
+  if (profile?.application_id) {
+    const table = profile.role === "nonprofit" ? "nonprofit_applications" : "reseller_applications";
+    const { data } = await db.from(table).select("*").eq("id", profile.application_id).maybeSingle();
+    appData = data;
   }
 
+  // Determine where the back link goes
+  const dashboardHref = profile?.role === "nonprofit" ? "/nonprofit/dashboard"
+    : profile?.role === "reseller" ? "/reseller/dashboard"
+    : "/dashboard";
+
   return (
-    <main className="min-h-[70vh] max-w-xl mx-auto px-4 py-12">
+    <main className="max-w-2xl mx-auto px-4 py-12">
       <div className="mb-8">
-        <Link href="/dashboard" className="text-sm text-gray-500 hover:text-nct-navy">← Back to dashboard</Link>
+        <Link href={dashboardHref} className="text-sm text-gray-500 hover:text-nct-navy transition-colors">
+          ← Back to dashboard
+        </Link>
       </div>
 
-      <h1 className="text-3xl font-bold text-nct-navy mb-2">Account Settings</h1>
-      <p className="text-gray-600 text-sm mb-8">Update your login password below.</p>
-
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8">
-        <h2 className="text-lg font-semibold text-nct-navy mb-5">Change Password</h2>
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2"
-              required
-              minLength={8}
-              autoFocus
-            />
-            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-            <input
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2"
-              required
-            />
-          </div>
-
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          {success && <p className="text-green-600 text-sm font-medium">Password updated successfully.</p>}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {loading ? "Saving…" : "Update Password"}
-          </button>
-        </form>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-nct-navy mb-1">Account Settings</h1>
+        <p className="text-gray-500 text-sm">{user.email}</p>
       </div>
+
+      <AccountSettingsForm
+        role={profile?.role}
+        appData={appData}
+        email={user.email}
+      />
     </main>
   );
 }
