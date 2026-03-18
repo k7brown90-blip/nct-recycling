@@ -7,6 +7,7 @@ import AppointmentRequestForm from "@/components/AppointmentRequestForm";
 import NonprofitBinsBooker from "@/components/NonprofitBinsBooker";
 import AgreementDownloadButton from "@/components/AgreementDownloadButton";
 import TaxReceiptSection from "@/components/TaxReceiptSection";
+import ContainerRequestSection from "@/components/ContainerRequestSection";
 
 export const metadata = { title: "Nonprofit Partner Portal" };
 
@@ -63,10 +64,18 @@ export default async function NonprofitDashboard() {
           <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">Status</p>
           <p className="text-2xl font-bold text-green-800">✅ Active</p>
         </div>
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Bags on Record</p>
-          <p className="text-2xl font-bold text-nct-navy">{currentBagCount ?? "—"}</p>
-        </div>
+        {app?.account_type === "fl" ? (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Account Type</p>
+            <p className="text-xl font-bold text-nct-navy">Full Load (FL)</p>
+            <p className="text-xs text-gray-500 mt-1">Container-based pickup</p>
+          </div>
+        ) : (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Bags on Record</p>
+            <p className="text-2xl font-bold text-nct-navy">{currentBagCount ?? "—"}</p>
+          </div>
+        )}
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Partner Since</p>
           <p className="text-lg font-bold text-nct-navy">
@@ -75,26 +84,30 @@ export default async function NonprofitDashboard() {
         </div>
       </div>
 
-      {/* Bag count updater */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-        <h2 className="font-bold text-nct-navy text-lg mb-1">Donation Bag Count</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          Keep this updated so NCT can accurately plan pickup routes. Update any time your storage level changes.
-        </p>
-        <BagCountForm currentCount={currentBagCount} />
-        {bagHistory && bagHistory.length > 1 && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <p className="text-xs font-medium text-gray-500 mb-2">Recent updates</p>
-            <div className="space-y-1">
-              {bagHistory.slice(1, 4).map((b) => (
-                <div key={b.id} className="flex justify-between text-xs text-gray-400">
-                  <span>{new Date(b.created_at).toLocaleDateString()} — {b.bag_count} bags{b.notes ? ` (${b.notes})` : ""}</span>
-                </div>
-              ))}
+      {/* Bag count (LTL) or Container pickup request (FL) */}
+      {app?.account_type === "fl" ? (
+        <ContainerRequestSection />
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
+          <h2 className="font-bold text-nct-navy text-lg mb-1">Donation Bag Count</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Keep this updated so NCT can accurately plan pickup routes. Update any time your storage level changes.
+          </p>
+          <BagCountForm currentCount={currentBagCount} />
+          {bagHistory && bagHistory.length > 1 && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs font-medium text-gray-500 mb-2">Recent updates</p>
+              <div className="space-y-1">
+                {bagHistory.slice(1, 4).map((b) => (
+                  <div key={b.id} className="flex justify-between text-xs text-gray-400">
+                    <span>{new Date(b.created_at).toLocaleDateString()} — {b.bag_count} bags{b.notes ? ` (${b.notes})` : ""}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Nonprofit bins booking */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">

@@ -14,12 +14,12 @@ const STATUS_COLORS = {
 
 const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots"];
 
-// Bag weight constants — 55-gal bag ≈ 30 lbs
-const LBS_PER_BAG = 30;
+// Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
+const LBS_PER_BAG = 20;
 const SCHEDULE_LBS = 750;   // trigger: schedule pickup
 const TARGET_LBS   = 1000;  // ideal pickup weight
-const SCHEDULE_BAGS = Math.round(SCHEDULE_LBS / LBS_PER_BAG); // ~25
-const TARGET_BAGS   = Math.round(TARGET_LBS   / LBS_PER_BAG); // ~33
+const SCHEDULE_BAGS = Math.round(SCHEDULE_LBS / LBS_PER_BAG); // ~38
+const TARGET_BAGS   = Math.round(TARGET_LBS   / LBS_PER_BAG); // 50
 
 function bagColor(count) {
   if (count === null || count === undefined) return "text-gray-300";
@@ -89,6 +89,13 @@ export default function AdminPage() {
   // Documents dropdown open state
   const [docsOpen, setDocsOpen] = useState(false);
 
+  // Container pickup requests (FL accounts)
+  const [containerRequests, setContainerRequests] = useState([]);
+  const [containerLoading, setContainerLoading] = useState(false);
+  const [selectedContainer, setSelectedContainer] = useState(null);
+  const [containerAdminNotes, setContainerAdminNotes] = useState("");
+  const [containerScheduleDate, setContainerScheduleDate] = useState("");
+
   const isNonprofit = section === "Nonprofit Apps";
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
 
@@ -148,6 +155,14 @@ export default function AdminPage() {
     setLoading(false);
   }, [secret]);
 
+  const fetchContainerRequests = useCallback(async () => {
+    setContainerLoading(true);
+    const res = await fetch("/api/admin/container-requests", { headers: authHeader });
+    const json = await res.json();
+    setContainerRequests(json.requests || []);
+    setContainerLoading(false);
+  }, [secret]);
+
   const fetchShoppingDays = useCallback(async () => {
     setLoading(true);
     const upcoming = shoppingFilter === "upcoming";
@@ -161,12 +176,12 @@ export default function AdminPage() {
     if (!authed) return;
     setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
     if (section === "Reseller Apps" || section === "Nonprofit Apps") fetchApplications();
-    if (section === "Bag Levels") fetchBagLevels();
+    if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") fetchRoutes();
     if (section === "Exchange Appts") fetchAppointments();
     if (section === "Shopping Days") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
-  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots]);
+  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests]);
 
   useEffect(() => {
     setDocsOpen(false);
@@ -339,6 +354,64 @@ export default function AdminPage() {
     }
   }
 
+  async function handleUpdateAccountType(applicationId, account_type) {
+    const res = await fetch("/api/admin/nonprofit-applications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: applicationId, account_type }),
+    });
+    if (res.ok) {
+      setMessage(`✅ Account type updated to ${account_type.toUpperCase()}.`);
+      fetchApplications();
+    } else {
+      setMessage("Failed to update account type.");
+    }
+  }
+
+  async function viewContainerPhoto(requestId) {
+    const res = await fetch("/api/admin/container-requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ request_id: requestId }),
+    });
+    const json = await res.json();
+    if (json.url) {
+      const a = document.createElement("a");
+      a.href = json.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    } else {
+      setMessage("No photo on file for this request.");
+    }
+  }
+
+  async function handleUpdateContainerRequest(id, updates) {
+    const res = await fetch("/api/admin/container-requests", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id, ...updates }),
+    });
+    if (res.ok) {
+      setMessage("✅ Request updated.");
+      setSelectedContainer(null);
+      setContainerAdminNotes("");
+      setContainerScheduleDate("");
+      fetchContainerRequests();
+    } else {
+      setMessage("Update failed.");
+    }
+  }
+
+  async function handleDeleteContainerRequest(id) {
+    if (!confirm("Delete this container pickup request?")) return;
+    const res = await fetch("/api/admin/container-requests", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) { setMessage("Request deleted."); fetchContainerRequests(); }
+    else setMessage("Delete failed.");
+  }
+
   async function handleCreateRoute() {
     if (!routeDate || routeStops.length === 0) { setMessage("Set a date and add at least one stop."); return; }
     setRouteLoading(true); setMessage("");
@@ -363,12 +436,37 @@ export default function AdminPage() {
     setRouteLoading(false);
   }
 
+  const NCT_ADDRESS = "6108 South College Ave STE C, Fort Collins, CO 80525";
+
+  function buildGoogleMapsUrl(stops) {
+    const waypoints = [...stops]
+      .sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0))
+      .map((s) => {
+        // Supports both route-builder stops (address on root) and saved route stops (address on nonprofit_applications)
+        const np = s.nonprofit_applications || s;
+        const addr = [np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ");
+        return addr || np.org_name || s.org_name;
+      });
+    const points = [NCT_ADDRESS, ...waypoints, NCT_ADDRESS]; // start and end at NCT
+    return "https://www.google.com/maps/dir/" + points.map(encodeURIComponent).join("/");
+  }
+
+  function openInMaps(stops) {
+    const url = buildGoogleMapsUrl(stops);
+    const a = document.createElement("a");
+    a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
   function addStop(nonprofit) {
     if (routeStops.find((s) => s.nonprofit_id === nonprofit.id)) return;
     setRouteStops((prev) => [...prev, {
       nonprofit_id: nonprofit.id,
       org_name: nonprofit.org_name,
       email: nonprofit.email,
+      address_street: nonprofit.address_street,
+      address_city: nonprofit.address_city,
+      address_state: nonprofit.address_state,
       estimated_bags: nonprofit.bag_count || 0,
       stop_order: prev.length + 1,
       notes: "",
@@ -688,6 +786,36 @@ export default function AdminPage() {
                         {/* Admin Actions */}
                         <div className="px-5 py-4">
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Admin Actions</p>
+
+                          {/* Account type (nonprofit only) */}
+                          {isNonprofit && (
+                            <div className="mb-3 flex items-center gap-3">
+                              <label className="text-xs font-medium text-gray-500 shrink-0">Account Type:</label>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleUpdateAccountType(app.id, "ltl")}
+                                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                                    (app.account_type || "ltl") === "ltl"
+                                      ? "bg-nct-navy text-white border-nct-navy"
+                                      : "bg-white text-gray-600 border-gray-300 hover:border-nct-navy"
+                                  }`}
+                                >
+                                  LTL — Less than Truckload
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateAccountType(app.id, "fl")}
+                                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                                    app.account_type === "fl"
+                                      ? "bg-nct-navy text-white border-nct-navy"
+                                      : "bg-white text-gray-600 border-gray-300 hover:border-nct-navy"
+                                  }`}
+                                >
+                                  FL — Full Load
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
                             placeholder="Admin notes" className="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-3" />
                           <div className="flex gap-2">
@@ -716,99 +844,228 @@ export default function AdminPage() {
       {section === "Bag Levels" && (
         <div>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-500">Current bag inventory across all approved nonprofit partners.</p>
-            <button onClick={fetchBagLevels} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
+            <p className="text-sm text-gray-500">Inventory levels across all approved nonprofit partners.</p>
+            <button onClick={() => { fetchBagLevels(); fetchContainerRequests(); }}
+              className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
           </div>
-          {/* Weight reference */}
-          <p className="text-xs text-gray-400 mb-5">
-            ~{LBS_PER_BAG} lbs/bag · Schedule at {SCHEDULE_BAGS} bags (~{SCHEDULE_LBS} lbs) · Ideal pickup at {TARGET_BAGS} bags (~{TARGET_LBS} lbs)
-          </p>
 
-          {loading ? <p className="text-gray-500 text-sm">Loading…</p>
-           : bagLevels.length === 0 ? <p className="text-gray-500 text-sm">No approved nonprofits yet.</p>
-           : (
-            <div className="space-y-3">
-              {bagLevels
-                .sort((a, b) => (b.bag_count ?? -1) - (a.bag_count ?? -1))
-                .map((np) => {
-                  const count = np.bag_count ?? 0;
-                  const hasCount = np.bag_count !== null;
-                  const estLbs = count * LBS_PER_BAG;
-                  // Bar fills to 120% of target so over-target orgs show overflow
-                  const barMax = TARGET_BAGS * 1.2;
-                  const barPct = hasCount ? Math.min((count / barMax) * 100, 100) : 0;
-                  const schedulePct = (SCHEDULE_BAGS / barMax) * 100;
-                  const targetPct  = (TARGET_BAGS  / barMax) * 100;
-                  const status = !hasCount ? null
-                    : count >= TARGET_BAGS   ? { label: "Needs Pickup",      cls: "bg-red-100 text-red-700" }
-                    : count >= SCHEDULE_BAGS ? { label: "Schedule Pickup",   cls: "bg-yellow-100 text-yellow-700" }
-                    : { label: "Building Up", cls: "bg-green-100 text-green-700" };
-                  return (
-                    <div key={np.id} className="border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start justify-between gap-4 mb-3">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-nct-navy">{np.org_name}</p>
-                          <p className="text-xs text-gray-500">
-                            {[np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ")}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-0.5">{np.available_pickup_hours || "Hours not specified"}</p>
-                          {np.dock_instructions && <p className="text-xs text-gray-400">Dock: {np.dock_instructions}</p>}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className={`text-3xl font-bold leading-none ${bagColor(np.bag_count)}`}>
-                            {np.bag_count ?? "—"}
-                          </p>
-                          <p className="text-xs text-gray-400">bags</p>
-                          {hasCount && <p className="text-xs text-gray-400">~{estLbs.toLocaleString()} lbs</p>}
-                          {np.bag_count_updated && (
-                            <p className="text-xs text-gray-300 mt-1">Updated {new Date(np.bag_count_updated).toLocaleDateString()}</p>
+          {/* ── LTL Accounts ── */}
+          {(() => {
+            const ltlAccounts = bagLevels.filter((n) => (n.account_type || "ltl") === "ltl");
+            return (
+              <div className="mb-8">
+                <h3 className="text-sm font-bold text-gray-700 mb-1">LTL — Less than Truckload</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  ~{LBS_PER_BAG} lbs/bag · Schedule at {SCHEDULE_BAGS} bags (~{SCHEDULE_LBS} lbs) · Ideal pickup at {TARGET_BAGS} bags (~{TARGET_LBS} lbs)
+                </p>
+                {loading ? <p className="text-gray-500 text-sm">Loading…</p>
+                 : ltlAccounts.length === 0 ? <p className="text-gray-400 text-sm italic">No LTL accounts.</p>
+                 : (
+                  <div className="space-y-3">
+                    {ltlAccounts
+                      .sort((a, b) => (b.bag_count ?? -1) - (a.bag_count ?? -1))
+                      .map((np) => {
+                        const count = np.bag_count ?? 0;
+                        const hasCount = np.bag_count !== null;
+                        const estLbs = count * LBS_PER_BAG;
+                        const barMax = TARGET_BAGS * 1.2;
+                        const barPct = hasCount ? Math.min((count / barMax) * 100, 100) : 0;
+                        const schedulePct = (SCHEDULE_BAGS / barMax) * 100;
+                        const targetPct  = (TARGET_BAGS  / barMax) * 100;
+                        const status = !hasCount ? null
+                          : count >= TARGET_BAGS   ? { label: "Needs Pickup",    cls: "bg-red-100 text-red-700" }
+                          : count >= SCHEDULE_BAGS ? { label: "Schedule Pickup", cls: "bg-yellow-100 text-yellow-700" }
+                          : { label: "Building Up", cls: "bg-green-100 text-green-700" };
+                        return (
+                          <div key={np.id} className="border border-gray-200 rounded-xl p-4">
+                            <div className="flex items-start justify-between gap-4 mb-3">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-nct-navy">{np.org_name}</p>
+                                <p className="text-xs text-gray-500">
+                                  {[np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ")}
+                                </p>
+                                <p className="text-xs text-gray-400 mt-0.5">{np.available_pickup_hours || "Hours not specified"}</p>
+                                {np.dock_instructions && <p className="text-xs text-gray-400">Dock: {np.dock_instructions}</p>}
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className={`text-3xl font-bold leading-none ${bagColor(np.bag_count)}`}>
+                                  {np.bag_count ?? "—"}
+                                </p>
+                                <p className="text-xs text-gray-400">bags</p>
+                                {hasCount && <p className="text-xs text-gray-400">~{estLbs.toLocaleString()} lbs</p>}
+                                {np.bag_count_updated && (
+                                  <p className="text-xs text-gray-300 mt-1">Updated {new Date(np.bag_count_updated).toLocaleDateString()}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="relative h-3 bg-gray-100 rounded-full overflow-visible">
+                              <div className={`h-3 rounded-full transition-all ${bagBarColor(np.bag_count)}`} style={{ width: `${barPct}%` }} />
+                              <div className="absolute top-0 bottom-0 w-0.5 bg-yellow-500 opacity-70" style={{ left: `${schedulePct}%` }} title={`Schedule at ~${SCHEDULE_BAGS} bags`} />
+                              <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-70" style={{ left: `${targetPct}%` }} title={`Pickup target ~${TARGET_BAGS} bags`} />
+                            </div>
+                            <div className="flex justify-between text-xs text-gray-300 mt-1">
+                              <span>0</span>
+                              <span className="text-yellow-500">{SCHEDULE_BAGS} bags ({SCHEDULE_LBS} lbs)</span>
+                              <span className="text-red-400">{TARGET_BAGS} bags ({TARGET_LBS} lbs)</span>
+                            </div>
+                            {status && (
+                              <div className="mt-2">
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+                <div className="mt-4 flex gap-5 text-xs text-gray-400">
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> Under {SCHEDULE_BAGS} bags — building up</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block"></span> {SCHEDULE_BAGS}–{TARGET_BAGS - 1} bags — schedule pickup</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> {TARGET_BAGS}+ bags — needs pickup</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── FL Accounts ── */}
+          {(() => {
+            const flAccounts = bagLevels.filter((n) => n.account_type === "fl");
+            return (
+              <div>
+                <h3 className="text-sm font-bold text-gray-700 mb-1">FL — Full Load</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  Container-based accounts. Pickup triggered when container reaches ~75% full. Partners submit photo requests.
+                </p>
+                {loading || containerLoading ? <p className="text-gray-500 text-sm">Loading…</p>
+                 : flAccounts.length === 0 ? <p className="text-gray-400 text-sm italic">No FL accounts.</p>
+                 : (
+                  <div className="space-y-3">
+                    {flAccounts.map((np) => {
+                      const myRequests = containerRequests.filter((r) => r.application_id === np.id);
+                      const pendingRequests = myRequests.filter((r) => ["pending", "reviewed"].includes(r.status));
+                      const isSelected = selectedContainer?.application_id === np.id;
+                      return (
+                        <div key={np.id} className={`border rounded-xl p-4 ${pendingRequests.length > 0 ? "border-yellow-400 bg-yellow-50" : "border-gray-200"}`}>
+                          <div className="flex items-start justify-between gap-4 mb-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-nct-navy">{np.org_name}</p>
+                                <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">FL</span>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                {[np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ")}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-0.5">{np.available_pickup_hours || "Hours not specified"}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              {pendingRequests.length > 0 ? (
+                                <div>
+                                  <p className="text-2xl font-bold text-yellow-600">{pendingRequests.length}</p>
+                                  <p className="text-xs text-yellow-700">pickup request{pendingRequests.length !== 1 ? "s" : ""}</p>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-400">No pending requests</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Pickup requests for this FL account */}
+                          {myRequests.length > 0 && (
+                            <div className="space-y-2 mt-2">
+                              {myRequests.map((req) => (
+                                <div key={req.id} className={`border rounded-lg p-3 text-sm ${selectedContainer?.id === req.id ? "border-nct-navy bg-white" : "border-gray-200 bg-white"}`}>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[req.status] || "bg-gray-100 text-gray-600"}`}>
+                                          {req.status}
+                                        </span>
+                                        <span className="text-xs text-gray-400">{new Date(req.created_at).toLocaleDateString()}</span>
+                                        {req.container_photo_path && (
+                                          <button onClick={() => viewContainerPhoto(req.id)}
+                                            className="text-xs text-nct-navy underline hover:text-nct-gold">
+                                            📷 View Photo
+                                          </button>
+                                        )}
+                                      </div>
+                                      {req.notes && <p className="text-gray-600 mt-1">{req.notes}</p>}
+                                      {req.admin_notes && <p className="text-xs text-gray-400 mt-0.5">Admin note: {req.admin_notes}</p>}
+                                      {req.scheduled_date && (
+                                        <p className="text-xs text-blue-700 font-medium mt-0.5">
+                                          Scheduled: {new Date(req.scheduled_date + "T00:00:00").toLocaleDateString()}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-1.5 shrink-0">
+                                      <button
+                                        onClick={() => {
+                                          if (selectedContainer?.id === req.id) {
+                                            setSelectedContainer(null);
+                                          } else {
+                                            setSelectedContainer(req);
+                                            setContainerAdminNotes(req.admin_notes || "");
+                                            setContainerScheduleDate(req.scheduled_date || "");
+                                          }
+                                        }}
+                                        className="text-xs bg-nct-navy text-white px-2.5 py-1 rounded-lg hover:bg-nct-navy-dark transition-colors"
+                                      >
+                                        {selectedContainer?.id === req.id ? "Done" : "Manage"}
+                                      </button>
+                                      <button onClick={() => handleDeleteContainerRequest(req.id)}
+                                        className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+                                    </div>
+                                  </div>
+
+                                  {/* Inline manage panel */}
+                                  {selectedContainer?.id === req.id && (
+                                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                          <label className="text-xs text-gray-500 block mb-0.5">Schedule Date</label>
+                                          <input type="date" value={containerScheduleDate}
+                                            onChange={(e) => setContainerScheduleDate(e.target.value)}
+                                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-gray-500 block mb-0.5">Admin Note</label>
+                                          <input type="text" value={containerAdminNotes}
+                                            onChange={(e) => setContainerAdminNotes(e.target.value)}
+                                            placeholder="Note to nonprofit"
+                                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <button onClick={() => handleUpdateContainerRequest(req.id, { status: "reviewed", admin_notes: containerAdminNotes })}
+                                          className="flex-1 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 rounded transition-colors">
+                                          Mark Reviewed
+                                        </button>
+                                        <button onClick={() => handleUpdateContainerRequest(req.id, { status: "scheduled", scheduled_date: containerScheduleDate, admin_notes: containerAdminNotes })}
+                                          disabled={!containerScheduleDate}
+                                          className="flex-1 text-xs bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1.5 rounded transition-colors disabled:opacity-40">
+                                          Schedule Pickup
+                                        </button>
+                                        <button onClick={() => handleUpdateContainerRequest(req.id, { status: "completed", admin_notes: containerAdminNotes })}
+                                          className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white font-semibold py-1.5 rounded transition-colors">
+                                          Complete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {myRequests.length === 0 && (
+                            <p className="text-xs text-gray-400 italic mt-1">No pickup requests submitted.</p>
                           )}
                         </div>
-                      </div>
-
-                      {/* Progress bar */}
-                      <div className="relative h-3 bg-gray-100 rounded-full overflow-visible">
-                        {/* Filled bar */}
-                        <div
-                          className={`h-3 rounded-full transition-all ${bagBarColor(np.bag_count)}`}
-                          style={{ width: `${barPct}%` }}
-                        />
-                        {/* Schedule threshold marker */}
-                        <div
-                          className="absolute top-0 bottom-0 w-0.5 bg-yellow-500 opacity-70"
-                          style={{ left: `${schedulePct}%` }}
-                          title={`Schedule at ~${SCHEDULE_BAGS} bags`}
-                        />
-                        {/* Target marker */}
-                        <div
-                          className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-70"
-                          style={{ left: `${targetPct}%` }}
-                          title={`Pickup target ~${TARGET_BAGS} bags`}
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-300 mt-1">
-                        <span>0</span>
-                        <span className="text-yellow-500">{SCHEDULE_BAGS} bags ({SCHEDULE_LBS} lbs)</span>
-                        <span className="text-red-400">{TARGET_BAGS} bags ({TARGET_LBS} lbs)</span>
-                      </div>
-
-                      {status && (
-                        <div className="mt-2">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${status.cls}`}>
-                            {status.label}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-          <div className="mt-5 flex gap-5 text-xs text-gray-400">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> Under {SCHEDULE_BAGS} bags — building up</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block"></span> {SCHEDULE_BAGS}–{TARGET_BAGS - 1} bags — schedule pickup (~{SCHEDULE_LBS}–{TARGET_LBS - 1} lbs)</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> {TARGET_BAGS}+ bags — needs pickup (~{TARGET_LBS}+ lbs)</span>
-          </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -901,6 +1158,15 @@ export default function AdminPage() {
                 </div>
               )}
 
+              {routeStops.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => openInMaps(routeStops)}
+                  className="w-full mb-3 border-2 border-nct-navy text-nct-navy font-bold py-2.5 rounded-lg hover:bg-nct-navy hover:text-white transition-colors flex items-center justify-center gap-2"
+                >
+                  🗺 Preview Route in Google Maps ↗
+                </button>
+              )}
               <button onClick={handleCreateRoute} disabled={routeLoading || !routeDate || routeStops.length === 0}
                 className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50">
                 {routeLoading ? "Creating & Notifying…" : `Create Route & Notify (${routeStops.length} stops)`}
@@ -935,6 +1201,14 @@ export default function AdminPage() {
                     </div>
                   ))}
                   {r.notes && <p className="text-xs text-gray-400 mt-2">Note: {r.notes}</p>}
+                  {r.stops?.length > 0 && (
+                    <button
+                      onClick={() => openInMaps(r.stops)}
+                      className="mt-3 w-full border border-nct-navy text-nct-navy text-xs font-semibold py-1.5 rounded-lg hover:bg-nct-navy hover:text-white transition-colors flex items-center justify-center gap-1"
+                    >
+                      🗺 Open in Google Maps ↗
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

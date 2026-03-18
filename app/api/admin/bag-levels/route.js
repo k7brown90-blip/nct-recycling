@@ -16,7 +16,7 @@ export async function GET(request) {
   // Get all approved nonprofits
   const { data: nonprofits, error } = await db
     .from("nonprofit_applications")
-    .select("id, org_name, contact_name, email, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions")
+    .select("id, org_name, contact_name, email, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions, account_type")
     .eq("status", "approved")
     .order("org_name");
 

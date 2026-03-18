@@ -52,26 +52,46 @@ export async function PATCH(request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { id, status, admin_notes } = await request.json();
+  const body = await request.json();
+  const { id } = body;
+  if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
 
-  if (!id || !["approved", "denied", "pending"].includes(status)) {
-    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  const updates = {};
+
+  // Status update
+  if (body.status !== undefined) {
+    if (!["approved", "denied", "pending"].includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+    }
+    updates.status = body.status;
+    updates.reviewed_by = "admin";
+    updates.reviewed_at = new Date().toISOString();
+  }
+
+  // Admin notes (can be sent alone or with status)
+  if (body.admin_notes !== undefined) {
+    updates.admin_notes = body.admin_notes || null;
+  }
+
+  // Account type update (ltl or fl)
+  if (body.account_type !== undefined) {
+    if (!["ltl", "fl"].includes(body.account_type)) {
+      return NextResponse.json({ error: "Invalid account_type." }, { status: 400 });
+    }
+    updates.account_type = body.account_type;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 
   const supabase = createServiceClient();
   const { error } = await supabase
     .from("nonprofit_applications")
-    .update({
-      status,
-      admin_notes: admin_notes || null,
-      reviewed_by: "admin",
-      reviewed_at: new Date().toISOString(),
-    })
+    .update(updates)
     .eq("id", id);
 
-  if (error) {
-    return NextResponse.json({ error: "Update failed." }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
 
   return NextResponse.json({ success: true });
 }
