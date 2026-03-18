@@ -177,7 +177,7 @@ export default function AdminPage() {
     setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
     if (section === "Reseller Apps" || section === "Nonprofit Apps") fetchApplications();
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
-    if (section === "Routes") fetchRoutes();
+    if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
     if (section === "Exchange Appts") fetchAppointments();
     if (section === "Shopping Days") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
