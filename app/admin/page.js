@@ -283,8 +283,41 @@ export default function AdminPage() {
   async function viewAgreement(applicationId) {
     const res = await fetch(`/api/admin/nonprofit-agreement?application_id=${applicationId}`, { headers: authHeader });
     const json = await res.json();
-    if (json.url) window.open(json.url, "_blank");
-    else setMessage("Agreement PDF not found. It may not have been generated yet.");
+    if (json.url) {
+      const a = document.createElement("a");
+      a.href = json.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else if (json.missing) {
+      setMessage("⚠ No agreement PDF on file. Click \"Regenerate\" next to the agreement link to create it.");
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+  }
+
+  async function regenerateAgreement(applicationId) {
+    setMessage("Generating agreement PDF…");
+    const res = await fetch("/api/admin/nonprofit-agreement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ application_id: applicationId }),
+    });
+    const json = await res.json();
+    if (json.url) {
+      setMessage("✅ Agreement PDF generated.");
+      const a = document.createElement("a");
+      a.href = json.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      setMessage(`Error generating PDF: ${json.error}`);
+    }
   }
 
   async function handleCreateRoute() {
@@ -508,10 +541,16 @@ export default function AdminPage() {
                                   ) : (
                                     <p className="text-sm text-gray-400 italic">No IRS letter uploaded</p>
                                   )}
-                                  <button onClick={() => viewAgreement(app.id)}
-                                    className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
-                                    📄 Co-Op Participation Agreement (PDF) →
-                                  </button>
+                                  <div className="flex items-center gap-3">
+                                    <button onClick={() => viewAgreement(app.id)}
+                                      className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
+                                      📄 Co-Op Participation Agreement (PDF) →
+                                    </button>
+                                    <button onClick={() => regenerateAgreement(app.id)}
+                                      className="text-xs text-gray-400 hover:text-nct-navy underline transition-colors">
+                                      Regenerate
+                                    </button>
+                                  </div>
                                   {npLots.filter((l) => l.receipt_status === "uploaded").map((lot) => (
                                     <button key={lot.id} onClick={() => viewReceiptAsAdmin(lot.id)}
                                       className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
