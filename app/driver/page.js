@@ -104,7 +104,8 @@ export default function DriverPage() {
       setActualBags("");
       fetchRoutes();
     } else {
-      setMessage("Failed to complete stop. Try again.");
+      const json = await res.json().catch(() => ({}));
+      setMessage(`Failed: ${json.error || res.status}`);
     }
     setActionLoading(false);
   }
@@ -120,7 +121,8 @@ export default function DriverPage() {
       setMessage(status === "completed" ? "✅ Route marked complete!" : `Route marked ${status}.`);
       fetchRoutes();
     } else {
-      setMessage("Update failed.");
+      const json = await res.json().catch(() => ({}));
+      setMessage(`Failed: ${json.error || res.status}`);
     }
     setActionLoading(false);
   }
