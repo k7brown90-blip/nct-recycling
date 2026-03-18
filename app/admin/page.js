@@ -233,6 +233,8 @@ export default function AdminPage() {
 
   async function handleCreateShoppingDay(e) {
     e.preventDefault();
+    const dow = new Date(newShoppingDay.shopping_date + "T12:00:00").getDay();
+    if (dow === 5 || dow === 6) { setMessage("Error: NCT is closed Fridays and Saturdays."); return; }
     setShoppingDayLoading(true); setMessage("");
     const res = await fetch("/api/admin/shopping-days", {
       method: "POST",

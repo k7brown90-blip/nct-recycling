@@ -67,9 +67,12 @@ export async function POST(request) {
 
   const estimated_total_bags = stops.reduce((sum, s) => sum + (s.estimated_bags || 0), 0);
 
-  // Shopping day = day after pickup
+  // Shopping day = day after pickup, skip Friday (5) and Saturday (6)
   const shoppingDay = new Date(scheduled_date);
   shoppingDay.setDate(shoppingDay.getDate() + 1);
+  while ([5, 6].includes(shoppingDay.getDay())) {
+    shoppingDay.setDate(shoppingDay.getDate() + 1);
+  }
   const shopping_date = shoppingDay.toISOString().split("T")[0];
 
   // Create route

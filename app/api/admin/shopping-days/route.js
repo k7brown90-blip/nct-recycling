@@ -15,6 +15,11 @@ function isSunday(dateStr) {
   return new Date(dateStr + "T12:00:00").getDay() === 0;
 }
 
+function isClosed(dateStr) {
+  const dow = new Date(dateStr + "T12:00:00").getDay();
+  return dow === 5 || dow === 6; // Friday=5, Saturday=6
+}
+
 function calcWholesaleCap(day, route) {
   if (day.wholesale_capacity != null) return day.wholesale_capacity;
   const bags = route?.actual_total_bags || route?.estimated_total_bags || 0;
@@ -148,6 +153,7 @@ export async function POST(request) {
   // Create a single shopping day
   const { shopping_date, status, wholesale_capacity, bins_capacity, admin_notes } = body;
   if (!shopping_date) return NextResponse.json({ error: "shopping_date required." }, { status: 400 });
+  if (isClosed(shopping_date)) return NextResponse.json({ error: "NCT is closed Fridays and Saturdays. Choose a different day." }, { status: 400 });
 
   const { data, error } = await db.from("shopping_days").insert({
     shopping_date,
