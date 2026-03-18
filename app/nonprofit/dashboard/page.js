@@ -35,15 +35,12 @@ export default async function NonprofitDashboard() {
 
   const [
     { data: app },
-    { data: bagHistory },
     { data: appointments },
   ] = await Promise.all([
     db.from("nonprofit_applications").select("*").eq("id", profile.application_id).maybeSingle(),
-    db.from("bag_counts").select("*").eq("nonprofit_id", profile.application_id).order("created_at", { ascending: false }).limit(5),
     db.from("exchange_appointments").select("*").eq("nonprofit_id", profile.application_id).order("created_at", { ascending: false }),
   ]);
 
-  const currentBagCount = bagHistory?.[0]?.bag_count ?? null;
   const pendingAppt = appointments?.find((a) => a.status === "requested" || a.status === "scheduled");
 
   return (
@@ -72,8 +69,9 @@ export default async function NonprofitDashboard() {
           </div>
         ) : (
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Bags on Record</p>
-            <p className="text-2xl font-bold text-nct-navy">{currentBagCount ?? "—"}</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Account Type</p>
+            <p className="text-xl font-bold text-nct-navy">LTL Partner</p>
+            <p className="text-xs text-gray-500 mt-1">Bag-tracked pickup</p>
           </div>
         )}
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
@@ -93,19 +91,7 @@ export default async function NonprofitDashboard() {
           <p className="text-sm text-gray-500 mb-4">
             Keep this updated so NCT can accurately plan pickup routes. Update any time your storage level changes.
           </p>
-          <BagCountForm currentCount={currentBagCount} />
-          {bagHistory && bagHistory.length > 1 && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-500 mb-2">Recent updates</p>
-              <div className="space-y-1">
-                {bagHistory.slice(1, 4).map((b) => (
-                  <div key={b.id} className="flex justify-between text-xs text-gray-400">
-                    <span>{new Date(b.created_at).toLocaleDateString()} — {b.bag_count} bags{b.notes ? ` (${b.notes})` : ""}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <BagCountForm />
         </div>
       )}
 

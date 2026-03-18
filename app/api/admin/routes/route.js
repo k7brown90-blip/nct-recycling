@@ -33,7 +33,7 @@ export async function GET(request) {
   const { data: stops } = await db
     .from("pickup_route_stops")
     .select(`
-      id, route_id, stop_order, estimated_bags, notes,
+      id, route_id, stop_order, estimated_bags, actual_bags, stop_status, completed_at, notes,
       nonprofit_id,
       nonprofit_applications (org_name, contact_name, email, phone, address_street, address_city, address_state)
     `)
@@ -196,4 +196,74 @@ export async function POST(request) {
   }).eq("id", route.id);
 
   return NextResponse.json({ success: true, id: route.id });
+}
+
+// PATCH — mark a stop complete (resets nonprofit bag counter) or update route status
+export async function PATCH(request) {
+  if (!checkAdminAuth(request)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { action } = body;
+  const db = createServiceClient();
+
+  // ── Complete an individual stop ──
+  if (action === "complete_stop") {
+    const { stop_id, nonprofit_id, route_id, actual_bags } = body;
+    if (!stop_id || !nonprofit_id) {
+      return NextResponse.json({ error: "Missing stop_id or nonprofit_id." }, { status: 400 });
+    }
+
+    // Mark stop completed
+    const { error: stopError } = await db
+      .from("pickup_route_stops")
+      .update({
+        stop_status: "completed",
+        actual_bags: actual_bags ?? null,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", stop_id);
+
+    if (stopError) return NextResponse.json({ error: "Failed to update stop." }, { status: 500 });
+
+    // Insert a pickup reset entry — resets this nonprofit's running bag counter to 0
+    await db.from("bag_counts").insert({
+      nonprofit_id,
+      bag_count: 0,
+      entry_type: "pickup",
+      notes: `Picked up by NCT — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+    });
+
+    // Update route's actual_total_bags running sum
+    if (actual_bags && route_id) {
+      const { data: route } = await db
+        .from("pickup_routes")
+        .select("actual_total_bags")
+        .eq("id", route_id)
+        .single();
+      await db.from("pickup_routes").update({
+        actual_total_bags: (route?.actual_total_bags || 0) + actual_bags,
+      }).eq("id", route_id);
+    }
+
+    return NextResponse.json({ success: true });
+  }
+
+  // ── Update route status ──
+  if (action === "update_route_status") {
+    const { route_id, status } = body;
+    if (!route_id || !status) {
+      return NextResponse.json({ error: "Missing route_id or status." }, { status: 400 });
+    }
+    const valid = ["scheduled", "in_progress", "completed", "cancelled"];
+    if (!valid.includes(status)) {
+      return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+    }
+    const { error } = await db.from("pickup_routes").update({ status }).eq("id", route_id);
+    if (error) return NextResponse.json({ error: "Failed to update route." }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ error: "Unknown action." }, { status: 400 });
 }

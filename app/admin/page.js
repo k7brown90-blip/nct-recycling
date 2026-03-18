@@ -60,6 +60,8 @@ export default function AdminPage() {
   const [routeNotes, setRouteNotes] = useState("");
   const [routeStops, setRouteStops] = useState([]);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [completingStop, setCompletingStop] = useState(null); // { stop_id, nonprofit_id, route_id, org_name }
+  const [actualBagsInput, setActualBagsInput] = useState("");
 
   // Exchange appointments state
   const [appointments, setAppointments] = useState([]);
@@ -410,6 +412,36 @@ export default function AdminPage() {
     });
     if (res.ok) { setMessage("Request deleted."); fetchContainerRequests(); }
     else setMessage("Delete failed.");
+  }
+
+  async function handleCompleteStop() {
+    if (!completingStop) return;
+    const { stop_id, nonprofit_id, route_id } = completingStop;
+    const actual = actualBagsInput ? parseInt(actualBagsInput) : null;
+    const res = await fetch("/api/admin/routes", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ action: "complete_stop", stop_id, nonprofit_id, route_id, actual_bags: actual }),
+    });
+    if (res.ok) {
+      setMessage(`✅ Stop completed — bag counter reset for ${completingStop.org_name}.`);
+      setCompletingStop(null);
+      setActualBagsInput("");
+      fetchRoutes();
+    } else {
+      const json = await res.json();
+      setMessage(`Error: ${json.error}`);
+    }
+  }
+
+  async function handleUpdateRouteStatus(routeId, status) {
+    const res = await fetch("/api/admin/routes", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ action: "update_route_status", route_id: routeId, status }),
+    });
+    if (res.ok) { setMessage(`✅ Route marked ${status}.`); fetchRoutes(); }
+    else setMessage("Failed to update route status.");
   }
 
   async function handleCreateRoute() {
@@ -1182,35 +1214,119 @@ export default function AdminPage() {
            : routes.length === 0 ? <p className="text-gray-500 text-sm">No routes found.</p>
            : (
             <div className="space-y-3">
-              {routes.map((r) => (
-                <div key={r.id} className="border border-gray-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="font-semibold text-nct-navy">
-                        {new Date(r.scheduled_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-                        {r.scheduled_time && ` at ${r.scheduled_time}`}
-                      </p>
-                      <p className="text-xs text-gray-500">{r.stops?.length || 0} stops · ~{r.estimated_total_bags || 0} bags estimated</p>
+              {routes.map((r) => {
+                const completedStops = r.stops?.filter((s) => s.stop_status === "completed").length || 0;
+                const totalStops = r.stops?.length || 0;
+                const isActive = r.status === "scheduled" || r.status === "in_progress";
+                return (
+                  <div key={r.id} className={`border rounded-xl p-4 ${r.status === "in_progress" ? "border-nct-gold bg-yellow-50" : "border-gray-200"}`}>
+                    {/* Route header */}
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="font-semibold text-nct-navy">
+                          {new Date(r.scheduled_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                          {r.scheduled_time && ` at ${r.scheduled_time}`}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {totalStops} stops · ~{r.estimated_total_bags || 0} bags est
+                          {r.actual_total_bags ? ` · ${r.actual_total_bags} bags actual` : ""}
+                          {isActive && totalStops > 0 && ` · ${completedStops}/${totalStops} complete`}
+                        </p>
+                      </div>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[r.status]}`}>{r.status}</span>
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[r.status]}`}>{r.status}</span>
+
+                    {/* Stops */}
+                    <div className="space-y-1.5 mb-3">
+                      {r.stops?.map((s) => {
+                        const isDone = s.stop_status === "completed";
+                        const isSkipped = s.stop_status === "skipped";
+                        const isCompleting = completingStop?.stop_id === s.id;
+                        return (
+                          <div key={s.id} className={`border rounded-lg p-2.5 ${isDone ? "border-green-200 bg-green-50" : isSkipped ? "border-gray-100 bg-gray-50" : "border-gray-200 bg-white"}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-sm font-medium text-gray-700 shrink-0">{s.stop_order}.</span>
+                                <span className="text-sm font-medium text-gray-900 truncate">{s.nonprofit_applications?.org_name}</span>
+                                {isDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">✓ Done</span>}
+                                {isSkipped && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full shrink-0">Skipped</span>}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-xs text-gray-400">{s.estimated_bags ?? "—"} est</span>
+                                {isDone && s.actual_bags != null && (
+                                  <span className="text-xs font-semibold text-green-700">{s.actual_bags} actual</span>
+                                )}
+                                {!isDone && !isSkipped && isActive && (
+                                  <button
+                                    onClick={() => {
+                                      if (isCompleting) { setCompletingStop(null); setActualBagsInput(""); }
+                                      else { setCompletingStop({ stop_id: s.id, nonprofit_id: s.nonprofit_id, route_id: r.id, org_name: s.nonprofit_applications?.org_name }); setActualBagsInput(""); }
+                                    }}
+                                    className="text-xs bg-green-600 hover:bg-green-700 text-white px-2.5 py-1 rounded-lg transition-colors"
+                                  >
+                                    {isCompleting ? "Cancel" : "Complete Stop"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            {/* Completion form */}
+                            {isCompleting && (
+                              <div className="mt-2 pt-2 border-t border-green-200 flex items-end gap-2">
+                                <div className="flex-1">
+                                  <label className="text-xs text-gray-500 block mb-0.5">Actual bags picked up</label>
+                                  <input
+                                    type="number" min="0"
+                                    value={actualBagsInput}
+                                    onChange={(e) => setActualBagsInput(e.target.value)}
+                                    placeholder="e.g. 12"
+                                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                                  />
+                                </div>
+                                <button
+                                  onClick={handleCompleteStop}
+                                  className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                >
+                                  ✓ Confirm & Reset Counter
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {r.notes && <p className="text-xs text-gray-400 mb-2">Note: {r.notes}</p>}
+
+                    {/* Route actions */}
+                    <div className="flex gap-2 flex-wrap">
+                      {r.stops?.length > 0 && (
+                        <button onClick={() => openInMaps(r.stops)}
+                          className="flex-1 border border-nct-navy text-nct-navy text-xs font-semibold py-1.5 rounded-lg hover:bg-nct-navy hover:text-white transition-colors flex items-center justify-center gap-1">
+                          🗺 Open in Google Maps ↗
+                        </button>
+                      )}
+                      {r.status === "scheduled" && (
+                        <button onClick={() => handleUpdateRouteStatus(r.id, "in_progress")}
+                          className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                          Start Route
+                        </button>
+                      )}
+                      {isActive && (
+                        <button onClick={() => handleUpdateRouteStatus(r.id, "completed")}
+                          className="text-xs bg-green-600 hover:bg-green-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                          Complete Route
+                        </button>
+                      )}
+                      {isActive && (
+                        <button onClick={() => handleUpdateRouteStatus(r.id, "cancelled")}
+                          className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {r.stops?.map((s) => (
-                    <div key={s.id} className="flex justify-between text-sm text-gray-600 border-t border-gray-50 pt-1 mt-1">
-                      <span>{s.stop_order}. {s.nonprofit_applications?.org_name}</span>
-                      <span className="text-gray-400">{s.estimated_bags ?? "—"} bags</span>
-                    </div>
-                  ))}
-                  {r.notes && <p className="text-xs text-gray-400 mt-2">Note: {r.notes}</p>}
-                  {r.stops?.length > 0 && (
-                    <button
-                      onClick={() => openInMaps(r.stops)}
-                      className="mt-3 w-full border border-nct-navy text-nct-navy text-xs font-semibold py-1.5 rounded-lg hover:bg-nct-navy hover:text-white transition-colors flex items-center justify-center gap-1"
-                    >
-                      🗺 Open in Google Maps ↗
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

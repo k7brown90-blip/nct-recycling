@@ -5,7 +5,7 @@ function checkAdminAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.ADMIN_SECRET}`;
 }
 
-// GET — all approved nonprofits with their latest bag count
+// GET — all approved nonprofits with running bag total since last pickup
 export async function GET(request) {
   if (!checkAdminAuth(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -13,7 +13,6 @@ export async function GET(request) {
 
   const db = createServiceClient();
 
-  // Get all approved nonprofits
   const { data: nonprofits, error } = await db
     .from("nonprofit_applications")
     .select("id, org_name, contact_name, email, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions, account_type")
@@ -22,28 +21,35 @@ export async function GET(request) {
 
   if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
 
-  // Get latest bag count for each nonprofit
   const ids = nonprofits.map((n) => n.id);
   const { data: bagCounts } = await db
     .from("bag_counts")
-    .select("nonprofit_id, bag_count, notes, created_at")
+    .select("nonprofit_id, bag_count, entry_type, notes, created_at")
     .in("nonprofit_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"])
     .order("created_at", { ascending: false });
 
-  // Map latest bag count per nonprofit
-  const latestByNonprofit = {};
+  // For each nonprofit: sum 'add' entries since the most recent 'pickup' entry
+  const entriesByNp = {};
   for (const bc of bagCounts || []) {
-    if (!latestByNonprofit[bc.nonprofit_id]) {
-      latestByNonprofit[bc.nonprofit_id] = bc;
-    }
+    if (!entriesByNp[bc.nonprofit_id]) entriesByNp[bc.nonprofit_id] = [];
+    entriesByNp[bc.nonprofit_id].push(bc);
   }
 
-  const result = nonprofits.map((n) => ({
-    ...n,
-    bag_count: latestByNonprofit[n.id]?.bag_count ?? null,
-    bag_count_updated: latestByNonprofit[n.id]?.created_at ?? null,
-    bag_count_notes: latestByNonprofit[n.id]?.notes ?? null,
-  }));
+  const result = nonprofits.map((n) => {
+    const entries = entriesByNp[n.id] || [];
+    let total = 0;
+    let lastUpdated = null;
+    for (const entry of entries) {
+      if (entry.entry_type === "pickup") break;
+      total += entry.bag_count || 0;
+      if (!lastUpdated) lastUpdated = entry.created_at;
+    }
+    return {
+      ...n,
+      bag_count: entries.length > 0 ? total : null,
+      bag_count_updated: lastUpdated,
+    };
+  });
 
   return NextResponse.json({ nonprofits: result });
 }
