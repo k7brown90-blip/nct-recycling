@@ -1105,13 +1105,19 @@ export default function AdminPage() {
       {section === "Routes" && (
         <div>
           <div className="flex gap-2 mb-4 items-center">
-            {["scheduled", "completed", "cancelled", ""].map((s) => (
-              <button key={s} onClick={() => { setRouteFilter(s); }}
+            {[
+              { value: "scheduled",   label: "Scheduled" },
+              { value: "in_progress", label: "In Progress" },
+              { value: "completed",   label: "Completed" },
+              { value: "cancelled",   label: "Cancelled" },
+              { value: "",            label: "All" },
+            ].map(({ value, label }) => (
+              <button key={value} onClick={() => setRouteFilter(value)}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                  routeFilter === s ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  routeFilter === value ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                {s === "" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                {label}
               </button>
             ))}
             <button onClick={fetchRoutes} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻</button>
