@@ -68,7 +68,7 @@ export default async function ResellerDashboard() {
         {/* How it works */}
         <div className="grid md:grid-cols-3 gap-3 mb-6 text-center text-sm">
           {[
-            { icon: "📅", label: "Wholesale", sub: "10am–12pm · $0.30/lb", desc: "Unopened bags. Sort on-site, take everything you pull." },
+            { icon: "📅", label: "Wholesale", sub: "10am–4pm · $0.30/lb", desc: "Unopened bags. Sort on-site, take everything you pull." },
             { icon: "🗑️", label: "Bins",      sub: "12pm–4pm · $2.00/lb",  desc: "Sorted bins — restocked from the morning wholesale sort." },
             { icon: "🛍️", label: "Boutique",  sub: "10am–4pm · No booking", desc: "Always stocked. Walk in Mon–Thu any time." },
           ].map((item) => (
@@ -120,7 +120,7 @@ export default async function ResellerDashboard() {
           <p>📍 6108 South College Ave, STE C — Fort Collins, CO 80525</p>
           <p>🏪 Boutique: Mon–Thu 10am–4pm</p>
           <p>🗑️ Bins: Tue–Thu 12pm–4pm (route-dependent)</p>
-          <p>📦 Wholesale: Tue–Thu 10am–12pm (route-dependent)</p>
+          <p>📦 Wholesale: Tue–Thu 10am–4pm (route-dependent)</p>
           <p>📬 Donation drop-off: 24/7, east side of building</p>
         </div>
         <div className="flex gap-4 mt-4 text-sm">

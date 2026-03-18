@@ -1763,7 +1763,7 @@ export default function AdminPage() {
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <p className="font-bold text-nct-navy">Wholesale</p>
-                            <p className="text-xs text-gray-500">10:00 AM – 12:00 PM · $0.30/lb</p>
+                            <p className="text-xs text-gray-500">10:00 AM – 4:00 PM · $0.30/lb</p>
                           </div>
                           <span className="text-sm font-bold text-nct-navy">
                             {day.slots.wholesale.booked}/{day.slots.wholesale.capacity}

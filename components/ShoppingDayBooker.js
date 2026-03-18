@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 const SLOT_DISPLAY = {
   wholesale: {
     label: "Wholesale",
-    hours: "10:00 AM – 12:00 PM",
+    hours: "10:00 AM – 4:00 PM",
     price: "$0.30 / lb",
     desc: "Unopened bags — sort on-site and take what you pull.",
     color: "border-nct-gold bg-yellow-50",
