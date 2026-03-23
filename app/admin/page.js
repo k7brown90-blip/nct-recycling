@@ -231,6 +231,20 @@ export default function AdminPage() {
     setShoppingDayLoading(false);
   }
 
+  async function handleCleanupClosedDays() {
+    if (!confirm("Delete all upcoming Friday and Saturday shopping days?")) return;
+    setShoppingDayLoading(true); setMessage("");
+    const res = await fetch("/api/admin/shopping-days", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ action: "cleanup_closed_days" }),
+    });
+    const json = await res.json();
+    if (res.ok) { setMessage(`✅ Removed ${json.deleted} closed-day record${json.deleted !== 1 ? "s" : ""}.`); fetchShoppingDays(); }
+    else setMessage(`Error: ${json.error}`);
+    setShoppingDayLoading(false);
+  }
+
   async function handleCreateShoppingDay(e) {
     e.preventDefault();
     const dow = new Date(newShoppingDay.shopping_date + "T12:00:00").getDay();
@@ -1780,6 +1794,13 @@ export default function AdminPage() {
             ))}
             <button onClick={fetchShoppingDays} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻</button>
             <div className="ml-auto flex gap-2">
+              <button
+                onClick={handleCleanupClosedDays}
+                disabled={shoppingDayLoading}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-full text-sm transition-colors disabled:opacity-50"
+              >
+                🗑 Remove Fri/Sat Days
+              </button>
               <button
                 onClick={handleGenerateSundays}
                 disabled={shoppingDayLoading}

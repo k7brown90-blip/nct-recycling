@@ -19,7 +19,7 @@ export default async function ResellerDashboard() {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profile?.role !== "reseller") redirect("/dashboard");
+  if (!["reseller", "both"].includes(profile?.role)) redirect("/dashboard");
 
   const { data: app } = await db
     .from("reseller_applications")

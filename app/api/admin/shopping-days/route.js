@@ -125,6 +125,22 @@ export async function POST(request) {
   const body = await request.json();
   const db = createServiceClient();
 
+  // Delete any Friday/Saturday shopping days that slipped in before the guard was added
+  if (body.action === "cleanup_closed_days") {
+    const today = new Date().toISOString().split("T")[0];
+    const { data: futureDays } = await db
+      .from("shopping_days")
+      .select("id, shopping_date")
+      .gte("shopping_date", today);
+    const closedIds = (futureDays || []).filter((d) => isClosed(d.shopping_date)).map((d) => d.id);
+    let deleted = 0;
+    if (closedIds.length) {
+      await db.from("shopping_days").delete().in("id", closedIds);
+      deleted = closedIds.length;
+    }
+    return NextResponse.json({ success: true, deleted });
+  }
+
   if (body.action === "generate_sundays") {
     const weeks = body.weeks || 8;
     const d = new Date();

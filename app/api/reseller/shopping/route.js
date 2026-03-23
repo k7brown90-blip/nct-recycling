@@ -18,6 +18,10 @@ const SLOT_INFO = {
 function isSunday(dateStr) {
   return new Date(dateStr + "T12:00:00").getDay() === 0;
 }
+function isClosed(dateStr) {
+  const dow = new Date(dateStr + "T12:00:00").getDay();
+  return dow === 5 || dow === 6; // Friday=5, Saturday=6
+}
 function calcWholesaleCap(day, route) {
   if (day.wholesale_capacity != null) return day.wholesale_capacity;
   const bags = route?.actual_total_bags || route?.estimated_total_bags || 0;
@@ -35,7 +39,7 @@ async function getResellerProfile(user, db) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profile?.role !== "reseller" || !profile?.application_id) return null;
+  if (!["reseller", "both"].includes(profile?.role) || !profile?.application_id) return null;
 
   const { data: reseller } = await db
     .from("reseller_applications")
@@ -67,14 +71,16 @@ export async function GET(request) {
 
   if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
 
-  const dayIds = (days || []).map((d) => d.id);
+  // Drop any Fri/Sat days that may exist from before the closed-day guard was added
+  const openDays = (days || []).filter((d) => !isClosed(d.shopping_date));
+  const dayIds = openDays.map((d) => d.id);
   const { data: allBookings } = await db
     .from("shopping_bookings")
     .select("shopping_day_id, slot_type, reseller_id, status")
     .in("shopping_day_id", dayIds.length ? dayIds : ["00000000-0000-0000-0000-000000000000"])
     .eq("status", "confirmed");
 
-  const result = (days || []).map((day) => {
+  const result = openDays.map((day) => {
     const route  = day.pickup_routes;
     const wCap   = calcWholesaleCap(day, route);
     const bCap   = calcBinsCap(day);

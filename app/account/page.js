@@ -28,7 +28,7 @@ export default async function AccountSettingsPage() {
 
   // Determine where the back link goes
   const dashboardHref = profile?.role === "nonprofit" ? "/nonprofit/dashboard"
-    : profile?.role === "reseller" ? "/reseller/dashboard"
+    : (profile?.role === "reseller" || profile?.role === "both") ? "/reseller/dashboard"
     : "/dashboard";
 
   return (
