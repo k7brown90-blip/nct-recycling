@@ -2388,7 +2388,6 @@ export default function AdminPage() {
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                   </div>
                   <div>
-                  <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Min lbs (weekly)</label>
                     <input type="number" min="0" value={newAccount.min_lbs_weekly}
                       onChange={(e) => setNewAccount((p) => ({ ...p, min_lbs_weekly: e.target.value }))}
