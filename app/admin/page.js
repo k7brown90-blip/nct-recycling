@@ -918,7 +918,7 @@ export default function AdminPage() {
       )}
 
       {/* ===== APPLICATIONS (Reseller or Nonprofit) ===== */}
-      {(section === "Reseller Apps" || section === "Nonprofit Apps") && (
+      {(section === "Reseller Apps" || section === "Co-op Apps") && (
         <>
           <div className="flex gap-2 mb-6">
             {["pending", "approved", "denied", ""].map((s) => (
