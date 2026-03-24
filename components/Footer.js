@@ -36,7 +36,7 @@ export default function Footer() {
           <ul className="space-y-2 text-sm text-gray-300">
             <li><Link href="/shop" className="hover:text-nct-gold transition-colors">Shop / How to Buy</Link></li>
             <li><Link href="/donate" className="hover:text-nct-gold transition-colors">Donate Clothing</Link></li>
-            <li><Link href="/nonprofit-partners" className="hover:text-nct-gold transition-colors">Nonprofit Partners</Link></li>
+            <li><Link href="/nonprofit-partners" className="hover:text-nct-gold transition-colors">Co-op Partners</Link></li>
             <li><Link href="/retail-partners" className="hover:text-nct-gold transition-colors">Retail Partners</Link></li>
             <li><Link href="/community-partners" className="hover:text-nct-gold transition-colors">Our Partners</Link></li>
             <li><Link href="/wholesale" className="hover:text-nct-gold transition-colors">Wholesale Buyers</Link></li>

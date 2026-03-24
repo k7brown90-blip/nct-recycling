@@ -6,7 +6,7 @@ import { useState, useRef, useEffect } from "react";
 const navLinks = [
   { href: "/shop", label: "Shop" },
   { href: "/donate", label: "Donate" },
-  { href: "/nonprofit-partners", label: "Nonprofit Partners" },
+  { href: "/nonprofit-partners", label: "Co-op Partners" },
   { href: "/retail-partners", label: "Retail Partners" },
   { href: "/community-partners", label: "Our Partners" },
   { href: "/wholesale", label: "Wholesale" },
@@ -145,7 +145,7 @@ export default function Navbar() {
               className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors"
               onClick={() => setMenuOpen(false)}
             >
-              Nonprofit Application
+              Co-op Partner Application
             </Link>
           </div>
           <Link
