@@ -1287,6 +1287,89 @@ export default function AdminPage() {
                           </div>
                         )}
 
+                        {/* Edit Profile — reseller */}
+                        {!isNonprofit && (
+                          <div className="px-5 py-3">
+                            <button
+                              onClick={() => {
+                                if (!editingProfile) {
+                                  setProfileEdits({
+                                    full_name: app.full_name || "",
+                                    business_name: app.business_name || "",
+                                    email: app.email || "",
+                                    phone: app.phone || "",
+                                    program_type: app.program_type || "reseller",
+                                    tax_license_number: app.tax_license_number || "",
+                                    admin_notes: app.admin_notes || "",
+                                  });
+                                }
+                                setEditingProfile((v) => !v);
+                              }}
+                              className="flex items-center justify-between w-full text-left group"
+                            >
+                              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide group-hover:text-gray-600 transition-colors">
+                                Edit Reseller Profile
+                              </p>
+                              <span className="text-gray-400 text-xs">{editingProfile ? "▲ Close" : "▼ Open"}</span>
+                            </button>
+                            {editingProfile && (
+                              <form onSubmit={handleSaveProfile} className="mt-3 space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Full Name</label>
+                                    <input value={profileEdits.full_name || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, full_name: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Business Name</label>
+                                    <input value={profileEdits.business_name || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, business_name: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Email</label>
+                                    <input type="email" value={profileEdits.email || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, email: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Phone</label>
+                                    <input value={profileEdits.phone || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, phone: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Program Type</label>
+                                    <select value={profileEdits.program_type || "reseller"} onChange={(e) => setProfileEdits((p) => ({ ...p, program_type: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm">
+                                      <option value="reseller">Bins Reseller</option>
+                                      <option value="wholesale">Wholesale</option>
+                                      <option value="both">Both Programs</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Tax License #</label>
+                                    <input value={profileEdits.tax_license_number || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, tax_license_number: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <label className="text-xs text-gray-500 block mb-0.5">Admin Notes</label>
+                                    <textarea rows={2} value={profileEdits.admin_notes || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, admin_notes: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button type="submit" disabled={profileSaving}
+                                    className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-50">
+                                    {profileSaving ? "Saving…" : "Save Profile"}
+                                  </button>
+                                  <button type="button" onClick={() => setEditingProfile(false)}
+                                    className="px-4 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-bold py-2 rounded transition-colors">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            )}
+                          </div>
+                        )}
+
                         {/* Admin Actions */}
                         <div className="px-5 py-4">
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Admin Actions</p>

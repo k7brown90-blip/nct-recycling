@@ -51,32 +51,47 @@ export async function DELETE(request) {
   return NextResponse.json({ success: true });
 }
 
-// PATCH — approve or deny an application
+// PATCH — approve/deny an application OR update profile fields
 export async function PATCH(request) {
   if (!checkAdminAuth(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { id, status, admin_notes, reviewed_by } = await request.json();
-
-  if (!id || !["approved", "denied", "pending"].includes(status)) {
-    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
-  }
+  const body = await request.json();
+  const { id } = body;
+  if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
 
   const supabase = createServiceClient();
-  const { error } = await supabase
-    .from("reseller_applications")
-    .update({
-      status,
-      admin_notes: admin_notes || null,
-      reviewed_by: reviewed_by || "admin",
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq("id", id);
 
-  if (error) {
-    return NextResponse.json({ error: "Update failed." }, { status: 500 });
+  // Status update (approve/deny/pending)
+  if (body.status !== undefined) {
+    if (!["approved", "denied", "pending"].includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+    }
+    const { error } = await supabase
+      .from("reseller_applications")
+      .update({
+        status: body.status,
+        admin_notes: body.admin_notes || null,
+        reviewed_by: body.reviewed_by || "admin",
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+    return NextResponse.json({ success: true });
   }
 
+  // Profile field update
+  const PROFILE_FIELDS = [
+    "full_name", "business_name", "email", "phone",
+    "program_type", "tax_license_number", "admin_notes",
+  ];
+  const updates = {};
+  for (const key of PROFILE_FIELDS) {
+    if (key in body) updates[key] = body[key] || null;
+  }
+
+  const { error } = await supabase.from("reseller_applications").update(updates).eq("id", id);
+  if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
   return NextResponse.json({ success: true });
 }
