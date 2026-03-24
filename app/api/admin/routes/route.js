@@ -120,14 +120,11 @@ export async function POST(request) {
     .in("id", nonprofitIds);
 
   // Pickup date display
-  const pickupDateStr = new Date(scheduled_date).toLocaleDateString("en-US", {
+  const pickupDateStr = new Date(scheduled_date + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
-  // Shopping day = day after pickup
-  const shoppingDate = new Date(scheduled_date);
-  shoppingDate.setDate(shoppingDate.getDate() + 1);
-  const shoppingDateStr = shoppingDate.toLocaleDateString("en-US", {
+  const shoppingDateStr = new Date(shopping_date + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
