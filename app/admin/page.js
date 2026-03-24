@@ -37,6 +37,12 @@ export default function AdminPage() {
   const [secret, setSecret] = useState("");
   const [authed, setAuthed] = useState(false);
   const [authError, setAuthError] = useState("");
+
+  // Restore saved secret on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("nct_admin_secret");
+    if (saved) setSecret(saved);
+  }, []);
   const [section, setSection] = useState("Reseller Apps");
   const [message, setMessage] = useState("");
 
@@ -324,11 +330,20 @@ export default function AdminPage() {
     }
   }, [selected?.id, isNonprofit, fetchNpLots]);
 
+  // Auto-login when a saved secret is restored
+  useEffect(() => {
+    if (!secret || authed) return;
+    fetch("/api/admin/applications", { headers: { Authorization: `Bearer ${secret}` } })
+      .then((res) => { if (res.ok) setAuthed(true); });
+  }, [secret]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleAuth(e) {
     e.preventDefault();
     const res = await fetch("/api/admin/applications", { headers: authHeader });
-    if (res.ok) { setAuthed(true); setAuthError(""); }
-    else setAuthError("Invalid password.");
+    if (res.ok) {
+      localStorage.setItem("nct_admin_secret", secret);
+      setAuthed(true); setAuthError("");
+    } else setAuthError("Invalid password.");
   }
 
   async function handleApproveAndInvite() {
@@ -771,7 +786,7 @@ export default function AdminPage() {
     <main className="max-w-6xl mx-auto px-4 py-10">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-nct-navy">Admin Dashboard</h1>
-        <button onClick={() => setAuthed(false)} className="text-sm text-gray-500 underline">Sign out</button>
+        <button onClick={() => { localStorage.removeItem("nct_admin_secret"); setAuthed(false); setSecret(""); }} className="text-sm text-gray-500 underline">Sign out</button>
       </div>
 
       {/* Section tabs */}
