@@ -118,7 +118,7 @@ export default function AdminPage() {
   const [newAccount, setNewAccount] = useState({
     org_name: "", address_street: "", address_city: "", address_state: "", address_zip: "",
     contact_name: "", contact_email: "", contact_phone: "",
-    pickup_frequency: "weekly", rate_per_1000_lbs: "20",
+    account_type: "ltl", pickup_frequency: "weekly", rate_per_1000_lbs: "20", flat_rate_per_pickup: "",
     min_lbs_weekly: "1000", min_lbs_biweekly: "2500", min_lbs_adhoc: "5000",
     projected_lbs_week: "", contract_date: "", notes: "",
   });
@@ -591,6 +591,9 @@ export default function AdminPage() {
   // ── Discard account helpers ──
   function calcDiscardPayment(weight_lbs, load_type, account) {
     if (!account || !weight_lbs) return 0;
+    if (account.flat_rate_per_pickup != null && account.flat_rate_per_pickup !== "") {
+      return parseFloat(account.flat_rate_per_pickup);
+    }
     const freq = account.pickup_frequency;
     const min = load_type === "single_run" ? account.min_lbs_adhoc
       : freq === "weekly" ? account.min_lbs_weekly : account.min_lbs_biweekly;
@@ -617,7 +620,7 @@ export default function AdminPage() {
     if (res.ok) {
       setMessage("✅ Account created.");
       setShowNewAccount(false);
-      setNewAccount({ org_name: "", address_street: "", address_city: "", address_state: "", address_zip: "", contact_name: "", contact_email: "", contact_phone: "", pickup_frequency: "weekly", rate_per_1000_lbs: "20", min_lbs_weekly: "1000", min_lbs_biweekly: "2500", min_lbs_adhoc: "5000", projected_lbs_week: "", contract_date: "", notes: "" });
+      setNewAccount({ org_name: "", address_street: "", address_city: "", address_state: "", address_zip: "", contact_name: "", contact_email: "", contact_phone: "", account_type: "ltl", pickup_frequency: "weekly", rate_per_1000_lbs: "20", flat_rate_per_pickup: "", min_lbs_weekly: "1000", min_lbs_biweekly: "2500", min_lbs_adhoc: "5000", projected_lbs_week: "", contract_date: "", notes: "" });
       fetchDiscardAccounts();
     } else { setMessage(`Error: ${json.error}`); }
     setNewAccountLoading(false);
@@ -634,10 +637,14 @@ export default function AdminPage() {
     e.preventDefault();
     if (!selectedDiscard) return;
     setDiscardEditSaving(true); setMessage("");
+    const payload = {
+      ...discardEdits,
+      flat_rate_per_pickup: discardEdits.flat_rate_per_pickup !== "" ? discardEdits.flat_rate_per_pickup : null,
+    };
     const res = await fetch("/api/admin/discard-accounts", {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({ id: selectedDiscard.id, ...discardEdits }),
+      body: JSON.stringify({ id: selectedDiscard.id, ...payload }),
     });
     const json = await res.json();
     if (res.ok) {
@@ -2346,20 +2353,41 @@ export default function AdminPage() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                     <option value="weekly">Weekly</option>
                     <option value="biweekly">Bi-Weekly</option>
+                    <option value="monthly">Monthly</option>
                     <option value="adhoc">Ad Hoc</option>
                   </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Account Type</label>
+                  <div className="flex gap-2 mt-1">
+                    {[["ltl","LTL — Less than Truckload"],["fl","FL — Full Load"]].map(([val, label]) => (
+                      <button key={val} type="button"
+                        onClick={() => setNewAccount((p) => ({ ...p, account_type: val }))}
+                        className={`flex-1 text-xs font-bold px-3 py-2 rounded-lg border transition-colors ${newAccount.account_type === val ? "bg-nct-navy text-white border-nct-navy" : "bg-white text-gray-600 border-gray-300 hover:border-nct-navy"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               <div className="border-t border-yellow-200 pt-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Agreement Terms</p>
                 <div className="grid grid-cols-4 gap-3">
-                  <div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Flat Rate per Pickup (optional)</label>
+                    <input type="number" min="0" step="0.01" value={newAccount.flat_rate_per_pickup}
+                      onChange={(e) => setNewAccount((p) => ({ ...p, flat_rate_per_pickup: e.target.value }))}
+                      placeholder="e.g. 100 — overrides per-lb rate"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Rate ($/1,000 lbs)</label>
                     <input type="number" min="0" step="0.01" value={newAccount.rate_per_1000_lbs}
                       onChange={(e) => setNewAccount((p) => ({ ...p, rate_per_1000_lbs: e.target.value }))}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                   </div>
+                  <div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Min lbs (weekly)</label>
                     <input type="number" min="0" value={newAccount.min_lbs_weekly}
@@ -2465,6 +2493,8 @@ export default function AdminPage() {
                                       contact_email: acct.contact_email || "",
                                       contact_phone: acct.contact_phone || "",
                                       pickup_frequency: acct.pickup_frequency || "weekly",
+                                      account_type: acct.account_type || "ltl",
+                                      flat_rate_per_pickup: acct.flat_rate_per_pickup ?? "",
                                       rate_per_1000_lbs: acct.rate_per_1000_lbs ?? 20,
                                       min_lbs_weekly: acct.min_lbs_weekly ?? 1000,
                                       min_lbs_biweekly: acct.min_lbs_biweekly ?? 2500,
@@ -2541,6 +2571,7 @@ export default function AdminPage() {
                                     className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm">
                                     <option value="weekly">Weekly</option>
                                     <option value="biweekly">Bi-Weekly</option>
+                                    <option value="monthly">Monthly</option>
                                     <option value="adhoc">Ad Hoc</option>
                                   </select>
                                 </div>
@@ -2555,6 +2586,24 @@ export default function AdminPage() {
                               </div>
                               <div className="border-t border-gray-200 pt-3">
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Agreement Terms</p>
+                                <div className="mb-2">
+                                  <label className="text-xs text-gray-500 block mb-1">Account Type</label>
+                                  <div className="flex gap-2">
+                                    {["ltl", "fl"].map((t) => (
+                                      <button key={t} type="button"
+                                        onClick={() => setDiscardEdits((p) => ({ ...p, account_type: t }))}
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded border transition-colors ${discardEdits.account_type === t ? "bg-nct-navy text-white border-nct-navy" : "bg-white text-gray-600 border-gray-300 hover:border-nct-navy"}`}>
+                                        {t === "ltl" ? "LTL (Weight-Based)" : "FL (Full Load)"}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="mb-2">
+                                  <label className="text-xs text-gray-500 block mb-0.5">Flat Rate per Pickup (overrides per-lb if set)</label>
+                                  <input type="number" min="0" step="0.01" placeholder="Leave blank for per-lb pricing"
+                                    value={discardEdits.flat_rate_per_pickup ?? ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, flat_rate_per_pickup: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                </div>
                                 <div className="grid grid-cols-4 gap-2">
                                   <div>
                                     <label className="text-xs text-gray-500 block mb-0.5">Rate ($/1k lbs)</label>
@@ -2607,8 +2656,10 @@ export default function AdminPage() {
                                 ["Contact", acct.contact_name],
                                 ["Email", acct.contact_email],
                                 ["Phone", acct.contact_phone],
+                                ["Type", acct.account_type === "fl" ? "Full Load (FL)" : "LTL (Weight-Based)"],
                                 ["Frequency", acct.pickup_frequency],
-                                ["Rate", `$${acct.rate_per_1000_lbs} per 1,000 lbs`],
+                                ["Flat Rate", acct.flat_rate_per_pickup != null ? `$${parseFloat(acct.flat_rate_per_pickup).toFixed(2)} per pickup` : null],
+                                ["Rate", acct.flat_rate_per_pickup != null ? null : `$${acct.rate_per_1000_lbs} per 1,000 lbs`],
                                 ["Min (weekly)", acct.min_lbs_weekly ? `${acct.min_lbs_weekly.toLocaleString()} lbs` : null],
                                 ["Min (biweekly)", acct.min_lbs_biweekly ? `${acct.min_lbs_biweekly.toLocaleString()} lbs` : null],
                                 ["Min (ad hoc)", acct.min_lbs_adhoc ? `${acct.min_lbs_adhoc.toLocaleString()} lbs` : null],

@@ -7,6 +7,11 @@ function checkAuth(request) {
 
 // Calculate payment owed based on agreement terms
 function calcPayment(weight_lbs, load_type, account) {
+  // Flat rate overrides per-lb calculation
+  if (account.flat_rate_per_pickup != null) {
+    return parseFloat(account.flat_rate_per_pickup);
+  }
+
   const { pickup_frequency, rate_per_1000_lbs, min_lbs_weekly, min_lbs_biweekly, min_lbs_adhoc } = account;
 
   let min;
@@ -15,6 +20,7 @@ function calcPayment(weight_lbs, load_type, account) {
   } else if (pickup_frequency === "weekly") {
     min = min_lbs_weekly;
   } else {
+    // biweekly or monthly treated the same for minimums
     min = min_lbs_biweekly;
   }
 

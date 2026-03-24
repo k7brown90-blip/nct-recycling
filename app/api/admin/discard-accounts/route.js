@@ -38,8 +38,10 @@ export async function POST(request) {
       contact_name:       body.contact_name       || null,
       contact_email:      body.contact_email      || null,
       contact_phone:      body.contact_phone      || null,
+      account_type:       body.account_type       || "ltl",
       pickup_frequency:   body.pickup_frequency   || "weekly",
       rate_per_1000_lbs:  body.rate_per_1000_lbs  ?? 20,
+      flat_rate_per_pickup: body.flat_rate_per_pickup != null ? parseFloat(body.flat_rate_per_pickup) : null,
       min_lbs_weekly:     body.min_lbs_weekly     ?? 1000,
       min_lbs_biweekly:   body.min_lbs_biweekly   ?? 2500,
       min_lbs_adhoc:      body.min_lbs_adhoc      ?? 5000,
@@ -66,7 +68,7 @@ export async function PATCH(request) {
   const allowed = [
     "org_name", "address_street", "address_city", "address_state", "address_zip",
     "contact_name", "contact_email", "contact_phone",
-    "pickup_frequency", "rate_per_1000_lbs",
+    "account_type", "pickup_frequency", "rate_per_1000_lbs", "flat_rate_per_pickup",
     "min_lbs_weekly", "min_lbs_biweekly", "min_lbs_adhoc",
     "projected_lbs_week", "contract_date", "notes", "status",
   ];
