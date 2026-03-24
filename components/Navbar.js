@@ -85,7 +85,7 @@ export default function Navbar() {
                   onClick={() => setApplyOpen(false)}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-nct-navy"
                 >
-                  Nonprofit Application
+                  Co-Op Partner Application
                 </Link>
               </div>
             )}

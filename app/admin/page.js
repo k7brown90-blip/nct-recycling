@@ -12,7 +12,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Reseller Apps", "Nonprofit Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts"];
+const SECTIONS = ["Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -109,6 +109,9 @@ export default function AdminPage() {
   const [discardAccounts, setDiscardAccounts] = useState([]);
   const [discardLoading, setDiscardLoading] = useState(false);
   const [selectedDiscard, setSelectedDiscard] = useState(null);
+  const [editingDiscard, setEditingDiscard] = useState(false);
+  const [discardEdits, setDiscardEdits] = useState({});
+  const [discardEditSaving, setDiscardEditSaving] = useState(false);
   const [discardPickups, setDiscardPickups] = useState([]);
   const [discardPickupsLoading, setDiscardPickupsLoading] = useState(false);
   const [showNewAccount, setShowNewAccount] = useState(false);
@@ -135,7 +138,7 @@ export default function AdminPage() {
   const [containerAdminNotes, setContainerAdminNotes] = useState("");
   const [containerScheduleDate, setContainerScheduleDate] = useState("");
 
-  const isNonprofit = section === "Nonprofit Apps";
+  const isNonprofit = section === "Co-op Apps";
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
 
   const authHeader = { Authorization: `Bearer ${secret}` };
@@ -306,7 +309,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authed) return;
     setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
-    if (section === "Reseller Apps" || section === "Nonprofit Apps") fetchApplications();
+    if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
     if (section === "Exchange Appts") fetchAppointments();
@@ -316,6 +319,8 @@ export default function AdminPage() {
   }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts]);
 
   useEffect(() => {
+    setEditingDiscard(false);
+    setDiscardEdits({});
     if (selectedDiscard?.id) {
       setDiscardPickups([]);
       setPickupForm({ pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring", accepted: true, rejection_reason: "", notes: "" });
@@ -623,6 +628,32 @@ export default function AdminPage() {
     const res = await fetch("/api/admin/discard-accounts", { method: "DELETE", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ id }) });
     if (res.ok) { setMessage("Account deleted."); setSelectedDiscard(null); fetchDiscardAccounts(); }
     else setMessage("Delete failed.");
+  }
+
+  async function handleSaveDiscardEdits(e) {
+    e.preventDefault();
+    if (!selectedDiscard) return;
+    setDiscardEditSaving(true); setMessage("");
+    const res = await fetch("/api/admin/discard-accounts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: selectedDiscard.id, ...discardEdits }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setMessage("✅ Account updated.");
+      setEditingDiscard(false);
+      setDiscardEdits({});
+      // Refresh list and update selectedDiscard with new values
+      const refreshRes = await fetch("/api/admin/discard-accounts", { headers: authHeader });
+      const refreshJson = await refreshRes.json();
+      if (refreshRes.ok) {
+        setDiscardAccounts(refreshJson.accounts || []);
+        const updated = (refreshJson.accounts || []).find((a) => a.id === selectedDiscard.id);
+        if (updated) setSelectedDiscard(updated);
+      }
+    } else setMessage(`Error: ${json.error}`);
+    setDiscardEditSaving(false);
   }
 
   async function handleLogPickup(e) {
@@ -1267,7 +1298,7 @@ export default function AdminPage() {
       {section === "Bag Levels" && (
         <div>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-500">Inventory levels across all approved nonprofit partners.</p>
+            <p className="text-sm text-gray-500">Inventory levels across all approved co-op partners.</p>
             <button onClick={() => { fetchBagLevels(); fetchContainerRequests(); }}
               className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
           </div>
@@ -2416,30 +2447,182 @@ export default function AdminPage() {
                     {isExpanded && (
                       <div className="border-t border-gray-100 divide-y divide-gray-100">
 
-                        {/* Account details */}
+                        {/* Account details / Edit */}
                         <div className="px-5 py-4">
-                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Account Details</p>
-                          <dl className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
-                            {[
-                              ["Address", [acct.address_street, acct.address_city, acct.address_state, acct.address_zip].filter(Boolean).join(", ")],
-                              ["Contact", acct.contact_name],
-                              ["Email", acct.contact_email],
-                              ["Phone", acct.contact_phone],
-                              ["Frequency", acct.pickup_frequency],
-                              ["Rate", `$${acct.rate_per_1000_lbs} per 1,000 lbs`],
-                              ["Min (weekly)", acct.min_lbs_weekly ? `${acct.min_lbs_weekly.toLocaleString()} lbs` : null],
-                              ["Min (biweekly)", acct.min_lbs_biweekly ? `${acct.min_lbs_biweekly.toLocaleString()} lbs` : null],
-                              ["Min (ad hoc)", acct.min_lbs_adhoc ? `${acct.min_lbs_adhoc.toLocaleString()} lbs` : null],
-                              ["Projected/wk", acct.projected_lbs_week ? `${acct.projected_lbs_week.toLocaleString()} lbs` : null],
-                              ["Contract Date", acct.contract_date ? new Date(acct.contract_date + "T00:00:00").toLocaleDateString() : null],
-                              ["Notes", acct.notes],
-                            ].filter(([, v]) => v).map(([label, val]) => (
-                              <div key={label} className="flex gap-2">
-                                <dt className="text-gray-500 w-32 shrink-0">{label}:</dt>
-                                <dd className="font-medium break-all">{val}</dd>
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Account Details</p>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  if (!editingDiscard) {
+                                    setDiscardEdits({
+                                      org_name: acct.org_name || "",
+                                      address_street: acct.address_street || "",
+                                      address_city: acct.address_city || "",
+                                      address_state: acct.address_state || "",
+                                      address_zip: acct.address_zip || "",
+                                      contact_name: acct.contact_name || "",
+                                      contact_email: acct.contact_email || "",
+                                      contact_phone: acct.contact_phone || "",
+                                      pickup_frequency: acct.pickup_frequency || "weekly",
+                                      rate_per_1000_lbs: acct.rate_per_1000_lbs ?? 20,
+                                      min_lbs_weekly: acct.min_lbs_weekly ?? 1000,
+                                      min_lbs_biweekly: acct.min_lbs_biweekly ?? 2500,
+                                      min_lbs_adhoc: acct.min_lbs_adhoc ?? 5000,
+                                      projected_lbs_week: acct.projected_lbs_week ?? "",
+                                      contract_date: acct.contract_date || "",
+                                      notes: acct.notes || "",
+                                      status: acct.status || "active",
+                                    });
+                                  }
+                                  setEditingDiscard((v) => !v);
+                                }}
+                                className="text-xs font-semibold text-nct-navy hover:text-nct-gold underline transition-colors"
+                              >
+                                {editingDiscard ? "Cancel" : "✏ Edit"}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDiscardAccount(acct.id)}
+                                className="text-xs font-semibold text-red-600 hover:text-red-800 underline transition-colors"
+                              >
+                                🗑 Delete
+                              </button>
+                            </div>
+                          </div>
+
+                          {editingDiscard ? (
+                            <form onSubmit={handleSaveDiscardEdits} className="space-y-3">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="col-span-2">
+                                  <label className="text-xs text-gray-500 block mb-0.5">Organization Name</label>
+                                  <input value={discardEdits.org_name || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, org_name: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" required />
+                                </div>
+                                <div className="col-span-2">
+                                  <label className="text-xs text-gray-500 block mb-0.5">Street Address</label>
+                                  <input value={discardEdits.address_street || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, address_street: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500 block mb-0.5">City</label>
+                                  <input value={discardEdits.address_city || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, address_city: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">State</label>
+                                    <input value={discardEdits.address_state || ""} maxLength={2} onChange={(e) => setDiscardEdits((p) => ({ ...p, address_state: e.target.value }))}
+                                      placeholder="CO" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">ZIP</label>
+                                    <input value={discardEdits.address_zip || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, address_zip: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500 block mb-0.5">Contact Name</label>
+                                  <input value={discardEdits.contact_name || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, contact_name: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500 block mb-0.5">Contact Email</label>
+                                  <input type="email" value={discardEdits.contact_email || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, contact_email: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500 block mb-0.5">Contact Phone</label>
+                                  <input value={discardEdits.contact_phone || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, contact_phone: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500 block mb-0.5">Frequency</label>
+                                  <select value={discardEdits.pickup_frequency || "weekly"} onChange={(e) => setDiscardEdits((p) => ({ ...p, pickup_frequency: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm">
+                                    <option value="weekly">Weekly</option>
+                                    <option value="biweekly">Bi-Weekly</option>
+                                    <option value="adhoc">Ad Hoc</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500 block mb-0.5">Status</label>
+                                  <select value={discardEdits.status || "active"} onChange={(e) => setDiscardEdits((p) => ({ ...p, status: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm">
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                  </select>
+                                </div>
                               </div>
-                            ))}
-                          </dl>
+                              <div className="border-t border-gray-200 pt-3">
+                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Agreement Terms</p>
+                                <div className="grid grid-cols-4 gap-2">
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Rate ($/1k lbs)</label>
+                                    <input type="number" min="0" step="0.01" value={discardEdits.rate_per_1000_lbs ?? ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, rate_per_1000_lbs: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Min weekly (lbs)</label>
+                                    <input type="number" min="0" value={discardEdits.min_lbs_weekly ?? ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, min_lbs_weekly: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Min biweekly (lbs)</label>
+                                    <input type="number" min="0" value={discardEdits.min_lbs_biweekly ?? ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, min_lbs_biweekly: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Min ad hoc (lbs)</label>
+                                    <input type="number" min="0" value={discardEdits.min_lbs_adhoc ?? ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, min_lbs_adhoc: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Projected lbs/week</label>
+                                    <input type="number" min="0" value={discardEdits.projected_lbs_week ?? ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, projected_lbs_week: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Contract Date</label>
+                                    <input type="date" value={discardEdits.contract_date || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, contract_date: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                                  </div>
+                                </div>
+                                <div className="mt-2">
+                                  <label className="text-xs text-gray-500 block mb-0.5">Notes</label>
+                                  <textarea rows={2} value={discardEdits.notes || ""} onChange={(e) => setDiscardEdits((p) => ({ ...p, notes: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                </div>
+                              </div>
+                              <button type="submit" disabled={discardEditSaving}
+                                className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-50">
+                                {discardEditSaving ? "Saving…" : "Save Changes"}
+                              </button>
+                            </form>
+                          ) : (
+                            <dl className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
+                              {[
+                                ["Address", [acct.address_street, acct.address_city, acct.address_state, acct.address_zip].filter(Boolean).join(", ")],
+                                ["Contact", acct.contact_name],
+                                ["Email", acct.contact_email],
+                                ["Phone", acct.contact_phone],
+                                ["Frequency", acct.pickup_frequency],
+                                ["Rate", `$${acct.rate_per_1000_lbs} per 1,000 lbs`],
+                                ["Min (weekly)", acct.min_lbs_weekly ? `${acct.min_lbs_weekly.toLocaleString()} lbs` : null],
+                                ["Min (biweekly)", acct.min_lbs_biweekly ? `${acct.min_lbs_biweekly.toLocaleString()} lbs` : null],
+                                ["Min (ad hoc)", acct.min_lbs_adhoc ? `${acct.min_lbs_adhoc.toLocaleString()} lbs` : null],
+                                ["Projected/wk", acct.projected_lbs_week ? `${acct.projected_lbs_week.toLocaleString()} lbs` : null],
+                                ["Contract Date", acct.contract_date ? new Date(acct.contract_date + "T00:00:00").toLocaleDateString() : null],
+                                ["Notes", acct.notes],
+                              ].filter(([, v]) => v).map(([label, val]) => (
+                                <div key={label} className="flex gap-2">
+                                  <dt className="text-gray-500 w-32 shrink-0">{label}:</dt>
+                                  <dd className="font-medium break-all">{val}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
                         </div>
 
                         {/* Financial summary */}
