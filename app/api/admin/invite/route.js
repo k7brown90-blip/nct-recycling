@@ -77,6 +77,10 @@ export async function POST(request) {
   const portalLabel = role === "nonprofit" ? "Nonprofit Partner Portal" : "Retail Partner Portal";
   const greeting = full_name ? `Hi ${full_name},` : "Hi,";
 
+  // Route through our own landing page so email security scanners don't
+  // consume the one-time Supabase token before the user clicks it.
+  const activateUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/activate?link=${encodeURIComponent(linkData.properties.action_link)}`;
+
   // Send branded invite email via Resend
   const { error: emailError } = await resend.emails.send({
     from: "NCT Recycling <noreply@nctrecycling.com>",
@@ -95,7 +99,7 @@ export async function POST(request) {
             Click the button below to set your password and access your <strong>${portalLabel}</strong>.
           </p>
           <p style="text-align:center;margin:28px 0">
-            <a href="${linkData.properties.action_link}"
+            <a href="${activateUrl}"
                style="background:#d49a22;color:white;padding:14px 28px;text-decoration:none;border-radius:6px;font-weight:bold;font-size:15px;display:inline-block">
               Set Password &amp; Access Portal →
             </a>

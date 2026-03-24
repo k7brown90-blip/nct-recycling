@@ -1074,6 +1074,10 @@ export default function AdminPage() {
                           <div className="flex gap-2">
                             <button onClick={handleApproveAndInvite} disabled={actionLoading || app.status === "approved"}
                               className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">✅ Approve & Invite</button>
+                            {app.status === "approved" && (
+                              <button onClick={handleApproveAndInvite} disabled={actionLoading}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40" title="Send a fresh invite link (use if client's link expired)">↻ Resend Invite</button>
+                            )}
                             <button onClick={() => handleAction("denied")} disabled={actionLoading || app.status === "denied"}
                               className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-40">Deny</button>
                             <button onClick={() => handleAction("pending")} disabled={actionLoading || app.status === "pending"}
