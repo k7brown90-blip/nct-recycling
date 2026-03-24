@@ -149,7 +149,7 @@ export default function ShoppingDayBooker() {
       )}
       <div className="space-y-6">
         {days.map((day) => {
-          const dateStr = new Date(day.shopping_date).toLocaleDateString("en-US", {
+          const dateStr = new Date(day.shopping_date + "T12:00:00").toLocaleDateString("en-US", {
             weekday: "long", month: "long", day: "numeric", year: "numeric",
           });
           return (

@@ -180,7 +180,7 @@ export async function POST(request) {
   }
 
   const info = SLOT_INFO[slot_type];
-  const dateStr = new Date(day.shopping_date).toLocaleDateString("en-US", {
+  const dateStr = new Date(day.shopping_date + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
