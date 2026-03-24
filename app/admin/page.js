@@ -53,6 +53,9 @@ export default function AdminPage() {
   const [selected, setSelected] = useState(null);
   const [notes, setNotes] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileEdits, setProfileEdits] = useState({});
+  const [profileSaving, setProfileSaving] = useState(false);
 
   // Bag levels state
   const [bagLevels, setBagLevels] = useState([]);
@@ -323,6 +326,8 @@ export default function AdminPage() {
 
   useEffect(() => {
     setDocsOpen(false);
+    setEditingProfile(false);
+    setProfileEdits({});
     if (isNonprofit && selected?.id) {
       setNpLots([]);
       setInlineLot({ piece_count: "", lot_date: "", notes: "" });
@@ -344,6 +349,25 @@ export default function AdminPage() {
       localStorage.setItem("nct_admin_secret", secret);
       setAuthed(true); setAuthError("");
     } else setAuthError("Invalid password.");
+  }
+
+  async function handleSaveProfile(e) {
+    e.preventDefault();
+    if (!selected) return;
+    setProfileSaving(true);
+    const res = await fetch(apiPath, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: selected.id, ...profileEdits }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setMessage("✅ Partner profile updated.");
+      setEditingProfile(false);
+      setProfileEdits({});
+      fetchApplications();
+    } else setMessage(`Error: ${json.error}`);
+    setProfileSaving(false);
   }
 
   async function handleApproveAndInvite() {
@@ -735,7 +759,7 @@ export default function AdminPage() {
       address_street: nonprofit.address_street,
       address_city: nonprofit.address_city,
       address_state: nonprofit.address_state,
-      estimated_bags: nonprofit.bag_count || 0,
+      estimated_bags: nonprofit.estimated_bags ?? 0,
       stop_order: prev.length + 1,
       notes: "",
     }]);
@@ -1047,6 +1071,133 @@ export default function AdminPage() {
                                   </div>
                                 ))}
                               </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Edit Profile — nonprofit only */}
+                        {isNonprofit && (
+                          <div className="px-5 py-3">
+                            <button
+                              onClick={() => {
+                                if (!editingProfile) {
+                                  setProfileEdits({
+                                    org_name: app.org_name || "",
+                                    org_type: app.org_type || "",
+                                    contact_name: app.contact_name || "",
+                                    contact_title: app.contact_title || "",
+                                    phone: app.phone || "",
+                                    website: app.website || "",
+                                    address_street: app.address_street || "",
+                                    address_city: app.address_city || "",
+                                    address_state: app.address_state || "",
+                                    address_zip: app.address_zip || "",
+                                    available_pickup_hours: app.available_pickup_hours || "",
+                                    dock_instructions: app.dock_instructions || "",
+                                    estimated_bags: app.estimated_bags ?? "",
+                                  });
+                                }
+                                setEditingProfile((v) => !v);
+                              }}
+                              className="flex items-center justify-between w-full text-left group"
+                            >
+                              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide group-hover:text-gray-600 transition-colors">
+                                Edit Partner Profile
+                              </p>
+                              <span className="text-gray-400 text-xs">{editingProfile ? "▲ Close" : "▼ Open"}</span>
+                            </button>
+                            {editingProfile && (
+                              <form onSubmit={handleSaveProfile} className="mt-3 space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="col-span-2">
+                                    <label className="text-xs text-gray-500 block mb-0.5">Organization Name</label>
+                                    <input value={profileEdits.org_name || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, org_name: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Org Type</label>
+                                    <select value={profileEdits.org_type || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, org_type: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm">
+                                      <option value="">Select…</option>
+                                      <option>Nonprofit (501c3)</option>
+                                      <option>For-Profit Business</option>
+                                      <option>Social Enterprise</option>
+                                      <option>Thrift Store</option>
+                                      <option>Community Organization</option>
+                                      <option>Charity</option>
+                                      <option>Other</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Default Bag Capacity</label>
+                                    <input type="number" min="0" value={profileEdits.estimated_bags ?? ""} onChange={(e) => setProfileEdits((p) => ({ ...p, estimated_bags: e.target.value }))}
+                                      placeholder="e.g. 24" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                    <p className="text-xs text-gray-400 mt-0.5">Pre-filled when adding to a route</p>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Contact Name</label>
+                                    <input value={profileEdits.contact_name || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, contact_name: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Contact Title</label>
+                                    <input value={profileEdits.contact_title || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, contact_title: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Phone</label>
+                                    <input value={profileEdits.phone || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, phone: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Website</label>
+                                    <input value={profileEdits.website || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, website: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <label className="text-xs text-gray-500 block mb-0.5">Street Address</label>
+                                    <input value={profileEdits.address_street || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, address_street: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">City</label>
+                                    <input value={profileEdits.address_city || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, address_city: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-xs text-gray-500 block mb-0.5">State</label>
+                                      <input value={profileEdits.address_state || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, address_state: e.target.value }))}
+                                        placeholder="CO" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-gray-500 block mb-0.5">ZIP</label>
+                                      <input value={profileEdits.address_zip || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, address_zip: e.target.value }))}
+                                        className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                    </div>
+                                  </div>
+                                  <div className="col-span-2">
+                                    <label className="text-xs text-gray-500 block mb-0.5">Pickup Hours</label>
+                                    <input value={profileEdits.available_pickup_hours || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, available_pickup_hours: e.target.value }))}
+                                      placeholder="e.g. Mon–Fri 9am–5pm" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <label className="text-xs text-gray-500 block mb-0.5">Dock / Access Instructions</label>
+                                    <textarea rows={2} value={profileEdits.dock_instructions || ""} onChange={(e) => setProfileEdits((p) => ({ ...p, dock_instructions: e.target.value }))}
+                                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button type="submit" disabled={profileSaving}
+                                    className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white text-sm font-bold py-2 rounded transition-colors disabled:opacity-50">
+                                    {profileSaving ? "Saving…" : "Save Profile"}
+                                  </button>
+                                  <button type="button" onClick={() => setEditingProfile(false)}
+                                    className="px-4 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-bold py-2 rounded transition-colors">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
                             )}
                           </div>
                         )}

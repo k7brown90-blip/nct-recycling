@@ -195,18 +195,18 @@ export default function NonprofitApplyPage() {
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-12">
-      <h1 className="text-3xl font-bold text-nct-navy mb-2">Nonprofit Co-Op Application</h1>
+      <h1 className="text-3xl font-bold text-nct-navy mb-2">Co-Op Partner Application</h1>
       <p className="text-gray-600 mb-8">
-        Apply to join the NCT Recycling Exchange Program. Once approved, you'll schedule
-        sourcing appointments and manage your donation bag count through your partner portal.
-        Participation requires verified 501(c)(3) status.
+        Apply to join the NCT Recycling Exchange Program. Nonprofits, thrift stores, and
+        for-profit businesses are all welcome. Once approved, you'll schedule sourcing
+        appointments and manage your donation bag count through your partner portal.
       </p>
 
       <form onSubmit={(e) => { e.preventDefault(); handleNext(); }} className="space-y-8">
 
         {/* Organization Info */}
         <section>
-          <h2 className="text-lg font-bold text-nct-navy border-b border-gray-200 pb-2 mb-4">Organization Information</h2>
+          <h2 className="text-lg font-bold text-nct-navy border-b border-gray-200 pb-2 mb-4">Organization Information <span className="text-sm font-normal text-gray-400">(nonprofit or for-profit)</span></h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name *</label>
@@ -217,9 +217,11 @@ export default function NonprofitApplyPage() {
               <select name="org_type" value={form.org_type} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2">
                 <option value="">Select…</option>
                 <option>Nonprofit (501c3)</option>
-                <option>Charity</option>
+                <option>For-Profit Business</option>
+                <option>Social Enterprise</option>
                 <option>Thrift Store</option>
                 <option>Community Organization</option>
+                <option>Charity</option>
                 <option>Other</option>
               </select>
             </div>
@@ -233,10 +235,10 @@ export default function NonprofitApplyPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                IRS 501(c)(3) Determination Letter *
+                IRS 501(c)(3) Determination Letter <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <input type="file" name="irs_letter" onChange={handleChange} accept=".pdf,.jpg,.jpeg,.png" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-              <p className="text-xs text-gray-500 mt-1">Required. PDF, JPG, or PNG.</p>
+              <p className="text-xs text-gray-500 mt-1">Nonprofits only. PDF, JPG, or PNG. Skip if not applicable.</p>
             </div>
           </div>
         </section>

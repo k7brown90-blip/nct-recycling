@@ -81,6 +81,21 @@ export async function PATCH(request) {
     updates.account_type = body.account_type;
   }
 
+  // Profile field edits (admin can update partner info)
+  const PROFILE_FIELDS = [
+    "org_name", "org_type", "contact_name", "contact_title", "phone", "website",
+    "address_street", "address_city", "address_state", "address_zip",
+    "pickup_address", "available_pickup_hours", "dock_instructions",
+    "estimated_bags",
+  ];
+  for (const field of PROFILE_FIELDS) {
+    if (body[field] !== undefined) {
+      updates[field] = field === "estimated_bags"
+        ? (body[field] === "" || body[field] === null ? null : parseInt(body[field]))
+        : (body[field] || null);
+    }
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }

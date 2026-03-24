@@ -15,7 +15,7 @@ export async function GET(request) {
 
   const { data: nonprofits, error } = await db
     .from("nonprofit_applications")
-    .select("id, org_name, contact_name, email, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions, account_type")
+    .select("id, org_name, contact_name, email, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions, account_type, estimated_bags")
     .eq("status", "approved")
     .order("org_name");
 
