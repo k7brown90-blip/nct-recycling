@@ -18,6 +18,7 @@ export default async function DashboardPage() {
 
   if (profile?.role === "nonprofit") redirect("/nonprofit/dashboard");
   if (profile?.role === "reseller" || profile?.role === "both") redirect("/reseller/dashboard");
+  if (profile?.role === "discard") redirect("/discard/dashboard");
 
   // No profile yet — show a holding page
   return (

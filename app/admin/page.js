@@ -114,6 +114,10 @@ export default function AdminPage() {
   const [discardEditSaving, setDiscardEditSaving] = useState(false);
   const [discardPickups, setDiscardPickups] = useState([]);
   const [discardPickupsLoading, setDiscardPickupsLoading] = useState(false);
+  const [discardRequests, setDiscardRequests] = useState([]);
+  const [discardRequestsLoading, setDiscardRequestsLoading] = useState(false);
+  const [discardBagCount, setDiscardBagCount] = useState(null);
+  const [invitingDiscard, setInvitingDiscard] = useState(false);
   const [showNewAccount, setShowNewAccount] = useState(false);
   const [newAccount, setNewAccount] = useState({
     org_name: "", address_street: "", address_city: "", address_state: "", address_zip: "",
@@ -221,6 +225,20 @@ export default function AdminPage() {
     setDiscardPickupsLoading(false);
   }, [secret]);
 
+  const fetchDiscardRequests = useCallback(async (accountId) => {
+    setDiscardRequestsLoading(true);
+    const res = await fetch(`/api/admin/discard-requests?account_id=${accountId}`, { headers: authHeader });
+    const json = await res.json();
+    setDiscardRequests(json.requests || []);
+    setDiscardRequestsLoading(false);
+  }, [secret]);
+
+  const fetchDiscardBagCount = useCallback(async (accountId) => {
+    const res = await fetch(`/api/admin/discard-bag-counts?account_id=${accountId}`, { headers: authHeader });
+    const json = await res.json();
+    if (res.ok) setDiscardBagCount(json);
+  }, [secret]);
+
   const fetchShoppingDays = useCallback(async () => {
     setLoading(true);
     const upcoming = shoppingFilter === "upcoming";
@@ -323,11 +341,15 @@ export default function AdminPage() {
     setDiscardEdits({});
     if (selectedDiscard?.id) {
       setDiscardPickups([]);
+      setDiscardRequests([]);
+      setDiscardBagCount(null);
       setPickupForm({ pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring", accepted: true, rejection_reason: "", notes: "" });
       setMarkingPaid(null);
       fetchDiscardPickups(selectedDiscard.id);
+      fetchDiscardRequests(selectedDiscard.id);
+      fetchDiscardBagCount(selectedDiscard.id);
     }
-  }, [selectedDiscard?.id, fetchDiscardPickups]);
+  }, [selectedDiscard?.id, fetchDiscardPickups, fetchDiscardRequests, fetchDiscardBagCount]);
 
   useEffect(() => {
     setDocsOpen(false);
@@ -631,6 +653,31 @@ export default function AdminPage() {
     const res = await fetch("/api/admin/discard-accounts", { method: "DELETE", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ id }) });
     if (res.ok) { setMessage("Account deleted."); setSelectedDiscard(null); fetchDiscardAccounts(); }
     else setMessage("Delete failed.");
+  }
+
+  async function handleInviteDiscardPartner(acct) {
+    const email = acct.contact_email;
+    if (!email) { setMessage("No contact email on this account. Edit the account to add one first."); return; }
+    if (!confirm(`Send portal invite to ${email}?`)) return;
+    setInvitingDiscard(true); setMessage("");
+    const res = await fetch("/api/admin/discard-invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ discard_account_id: acct.id, email, contact_name: acct.contact_name, org_name: acct.org_name }),
+    });
+    const json = await res.json();
+    setMessage(res.ok ? `✅ Invite sent to ${email}.` : `Error: ${json.error}`);
+    setInvitingDiscard(false);
+  }
+
+  async function handleUpdateDiscardRequest(requestId, updates) {
+    const res = await fetch("/api/admin/discard-requests", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: requestId, ...updates }),
+    });
+    if (res.ok) { fetchDiscardRequests(selectedDiscard.id); }
+    else setMessage("Failed to update request.");
   }
 
   async function handleSaveDiscardEdits(e) {
@@ -2465,6 +2512,9 @@ export default function AdminPage() {
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${acct.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                             {acct.status}
                           </span>
+                          {acct.user_id && (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">Portal</span>
+                          )}
                           <span className="text-gray-400 text-xs">{isExpanded ? "▲" : "▼"}</span>
                         </div>
                       </div>
@@ -2478,7 +2528,14 @@ export default function AdminPage() {
                         <div className="px-5 py-4">
                           <div className="flex items-center justify-between mb-3">
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Account Details</p>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
+                              <button
+                                onClick={() => handleInviteDiscardPartner(acct)}
+                                disabled={invitingDiscard}
+                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline transition-colors disabled:opacity-50"
+                              >
+                                {acct.user_id ? "↻ Resend Invite" : "✉ Send Invite"}
+                              </button>
                               <button
                                 onClick={() => {
                                   if (!editingDiscard) {
@@ -2672,6 +2729,89 @@ export default function AdminPage() {
                                 </div>
                               ))}
                             </dl>
+                          )}
+                        </div>
+
+                        {/* Bag Count */}
+                        {acct.account_type !== "fl" && (
+                          <div className="px-5 py-4">
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Partner Bag Count</p>
+                            {discardBagCount === null ? (
+                              <p className="text-sm text-gray-400">Loading…</p>
+                            ) : (
+                              <div className="flex items-center gap-4">
+                                <div>
+                                  <p className="text-3xl font-bold text-nct-navy">{discardBagCount.total ?? 0}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">bags since last pickup</p>
+                                </div>
+                                {discardBagCount.total > 0 && (
+                                  <button
+                                    onClick={async () => {
+                                      await fetch("/api/admin/discard-bag-counts", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ account_id: acct.id }) });
+                                      fetchDiscardBagCount(acct.id);
+                                    }}
+                                    className="text-xs text-gray-500 hover:text-red-600 underline transition-colors"
+                                  >
+                                    Mark as Picked Up
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Pickup Requests */}
+                        <div className="px-5 py-4">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Pickup Requests</p>
+                          {discardRequestsLoading ? (
+                            <p className="text-sm text-gray-400">Loading…</p>
+                          ) : discardRequests.length === 0 ? (
+                            <p className="text-sm text-gray-400 italic">No pickup requests yet.</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {discardRequests.map((req) => {
+                                const statusColors = { pending: "bg-yellow-100 text-yellow-800", scheduled: "bg-blue-100 text-blue-800", completed: "bg-green-100 text-green-800", cancelled: "bg-gray-100 text-gray-500" };
+                                return (
+                                  <div key={req.id} className="border border-gray-200 rounded-lg p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${statusColors[req.status]}`}>{req.status}</span>
+                                          <span className="text-xs text-gray-500">{new Date(req.created_at).toLocaleDateString()}</span>
+                                          {req.preferred_date && <span className="text-xs text-gray-600">Preferred: {new Date(req.preferred_date + "T00:00:00").toLocaleDateString()}</span>}
+                                          {req.scheduled_date && <span className="text-xs text-blue-700 font-medium">Scheduled: {new Date(req.scheduled_date + "T00:00:00").toLocaleDateString()}</span>}
+                                        </div>
+                                        {(req.estimated_bags || req.estimated_weight_lbs) && (
+                                          <p className="text-xs text-gray-500">
+                                            {[req.estimated_bags && `~${req.estimated_bags} bags`, req.estimated_weight_lbs && `~${req.estimated_weight_lbs} lbs`].filter(Boolean).join(" · ")}
+                                          </p>
+                                        )}
+                                        {req.notes && <p className="text-xs text-gray-500 mt-0.5">{req.notes}</p>}
+                                        {req.admin_notes && <p className="text-xs text-blue-600 mt-0.5 italic">Your note: {req.admin_notes}</p>}
+                                      </div>
+                                      {req.status !== "completed" && req.status !== "cancelled" && (
+                                        <div className="flex gap-1 shrink-0">
+                                          {req.status === "pending" && (
+                                            <button onClick={() => handleUpdateDiscardRequest(req.id, { status: "scheduled" })}
+                                              className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors">
+                                              Schedule
+                                            </button>
+                                          )}
+                                          <button onClick={() => handleUpdateDiscardRequest(req.id, { status: "completed" })}
+                                            className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition-colors">
+                                            Complete
+                                          </button>
+                                          <button onClick={() => handleUpdateDiscardRequest(req.id, { status: "cancelled" })}
+                                            className="text-xs bg-gray-400 text-white px-2 py-1 rounded hover:bg-gray-500 transition-colors">
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
                         </div>
 

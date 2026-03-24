@@ -1,0 +1,48 @@
+import { createServiceClient } from "@/lib/supabase";
+import { NextResponse } from "next/server";
+
+function checkAuth(request) {
+  return request.headers.get("authorization") === `Bearer ${process.env.ADMIN_SECRET}`;
+}
+
+// GET — pickup requests for an account
+export async function GET(request) {
+  if (!checkAuth(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  const { searchParams } = new URL(request.url);
+  const account_id = searchParams.get("account_id");
+  if (!account_id) return NextResponse.json({ error: "Missing account_id." }, { status: 400 });
+
+  const db = createServiceClient();
+  const { data, error } = await db
+    .from("discard_pickup_requests")
+    .select("*")
+    .eq("discard_account_id", account_id)
+    .order("created_at", { ascending: false });
+
+  if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
+  return NextResponse.json({ requests: data || [] });
+}
+
+// PATCH — update request status / schedule it / add admin notes
+export async function PATCH(request) {
+  if (!checkAuth(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  const body = await request.json();
+  const { id } = body;
+  if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
+
+  const updates = {};
+  if (body.status !== undefined) {
+    const valid = ["pending", "scheduled", "completed", "cancelled"];
+    if (!valid.includes(body.status)) return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+    updates.status = body.status;
+  }
+  if (body.admin_notes !== undefined) updates.admin_notes = body.admin_notes || null;
+  if (body.scheduled_date !== undefined) updates.scheduled_date = body.scheduled_date || null;
+
+  const db = createServiceClient();
+  const { error } = await db.from("discard_pickup_requests").update(updates).eq("id", id);
+  if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+  return NextResponse.json({ success: true });
+}
