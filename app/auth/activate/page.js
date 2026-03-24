@@ -8,6 +8,10 @@ function ActivateContent() {
   const link = params.get("link");
   const [clicked, setClicked] = useState(false);
 
+  // Detect link type from the encoded Supabase URL
+  const isRecovery = link?.includes("type=recovery");
+  const isInvite = !isRecovery;
+
   if (!link) {
     return (
       <div className="text-center">
@@ -35,19 +39,22 @@ function ActivateContent() {
   return (
     <div className="text-center">
       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-        <span className="text-3xl">✅</span>
+        <span className="text-3xl">{isRecovery ? "🔑" : "✅"}</span>
       </div>
-      <h1 className="text-2xl font-bold text-nct-navy mb-3">You&rsquo;re approved!</h1>
+      <h1 className="text-2xl font-bold text-nct-navy mb-3">
+        {isRecovery ? "Reset your password" : "You\u2019re approved!"}
+      </h1>
       <p className="text-gray-600 mb-8 leading-relaxed">
-        Your NCT Recycling partner account is ready. Click the button below to
-        set your password and access your portal.
+        {isRecovery
+          ? "Click the button below to set a new password for your NCT Recycling account."
+          : "Your NCT Recycling partner account is ready. Click the button below to set your password and access your portal."}
       </p>
       <button
         onClick={handleActivate}
         disabled={clicked}
         className="bg-nct-gold hover:bg-nct-gold-dark disabled:opacity-60 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors w-full max-w-xs"
       >
-        {clicked ? "Opening portal…" : "Activate My Account →"}
+        {clicked ? "Opening…" : isRecovery ? "Reset My Password →" : "Activate My Account →"}
       </button>
       <p className="text-xs text-gray-400 mt-6">
         This link is single-use and expires in 24 hours.
