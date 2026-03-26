@@ -11,6 +11,8 @@ export default function AppointmentRequestForm({ onSuccess }) {
   const [preferredDate, setPreferredDate] = useState("");
   const [categories, setCategories] = useState([]);
   const [notes, setNotes] = useState("");
+  const [estimatedBags, setEstimatedBags] = useState("");
+  const [shipToAddress, setShipToAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -27,6 +29,12 @@ export default function AppointmentRequestForm({ onSuccess }) {
     setError("");
     setMessage("");
 
+    if (type === "delivery" && !shipToAddress.trim()) {
+      setError("Please enter a shipping address for delivery.");
+      setLoading(false);
+      return;
+    }
+
     const res = await fetch("/api/nonprofit/exchange-appointment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,14 +43,22 @@ export default function AppointmentRequestForm({ onSuccess }) {
         preferred_date: preferredDate || null,
         categories_requested: categories,
         notes,
+        estimated_bags: estimatedBags ? parseInt(estimatedBags) : null,
+        ship_to_address: type === "delivery" ? shipToAddress.trim() : null,
       }),
     });
 
     if (res.ok) {
-      setMessage("✅ Request submitted. NCT Recycling will confirm your appointment.");
+      setMessage(
+        type === "delivery"
+          ? "✅ Request submitted. NCT will review and send you a cost quote before confirming."
+          : "✅ Request submitted. NCT Recycling will confirm your appointment."
+      );
       setPreferredDate("");
       setCategories([]);
       setNotes("");
+      setEstimatedBags("");
+      setShipToAddress("");
       onSuccess?.();
     } else {
       const json = await res.json();
@@ -64,7 +80,7 @@ export default function AppointmentRequestForm({ onSuccess }) {
           {
             val: "delivery",
             label: "Delivery",
-            desc: "We curate a lot and deliver it — you cover labor & delivery cost",
+            desc: "We curate a lot and ship it — you cover labor & FedEx cost",
           },
         ].map(({ val, label, desc }) => (
           <button
@@ -83,10 +99,46 @@ export default function AppointmentRequestForm({ onSuccess }) {
         ))}
       </div>
 
+      {/* Delivery-specific fields */}
+      {type === "delivery" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+          <p className="text-xs text-amber-700 font-medium">
+            NCT will review your request and send a cost quote covering labor (curation) + FedEx shipping.
+            You confirm before we ship.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Estimated Bags Needed <span className="text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={estimatedBags}
+              onChange={(e) => setEstimatedBags(e.target.value)}
+              placeholder="e.g. 5"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-32"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Shipping Address <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={shipToAddress}
+              onChange={(e) => setShipToAddress(e.target.value)}
+              rows={2}
+              placeholder="Street address, city, state, zip"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              required
+            />
+          </div>
+        </div>
+      )}
+
       {/* Preferred date */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">
-          Preferred Date (optional)
+          Preferred Date <span className="text-gray-400">(optional)</span>
         </label>
         <input
           type="date"
@@ -97,12 +149,15 @@ export default function AppointmentRequestForm({ onSuccess }) {
         {type === "in_person" && (
           <p className="text-xs text-gray-400 mt-1">In-person visits are Mondays by appointment.</p>
         )}
+        {type === "delivery" && (
+          <p className="text-xs text-gray-400 mt-1">Preferred ship date — actual date confirmed after quote approval.</p>
+        )}
       </div>
 
       {/* Categories */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-2">
-          Categories Needed (check all that apply)
+          Categories Needed <span className="text-gray-400">(check all that apply)</span>
         </label>
         <div className="flex flex-wrap gap-2">
           {CATEGORIES.map((cat) => (
@@ -125,7 +180,7 @@ export default function AppointmentRequestForm({ onSuccess }) {
       {/* Notes */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">
-          Additional Notes (optional)
+          Additional Notes <span className="text-gray-400">(optional)</span>
         </label>
         <textarea
           value={notes}
@@ -144,7 +199,7 @@ export default function AppointmentRequestForm({ onSuccess }) {
         disabled={loading}
         className="w-full bg-nct-gold hover:bg-nct-gold-dark text-white font-bold py-2 rounded-lg transition-colors disabled:opacity-50"
       >
-        {loading ? "Submitting…" : "Request Appointment"}
+        {loading ? "Submitting…" : type === "delivery" ? "Request Delivery Quote" : "Request Appointment"}
       </button>
     </form>
   );

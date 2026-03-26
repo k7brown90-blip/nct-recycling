@@ -59,6 +59,8 @@ export default function AdminPage() {
 
   // Bag levels state
   const [bagLevels, setBagLevels] = useState([]);
+  const [adminBagOverride, setAdminBagOverride] = useState({}); // { [nonprofit_id]: string }
+  const [adminBagOverrideLoading, setAdminBagOverrideLoading] = useState(null); // nonprofit_id being saved
 
   // Routes state
   const [routes, setRoutes] = useState([]);
@@ -79,6 +81,8 @@ export default function AdminPage() {
   const [apptDate, setApptDate] = useState("");
   const [apptTime, setApptTime] = useState("");
   const [apptAdminNotes, setApptAdminNotes] = useState("");
+  const [apptLaborCost, setApptLaborCost] = useState("");
+  const [apptShippingCost, setApptShippingCost] = useState("");
   const [apptLoading, setApptLoading] = useState(false);
 
   // Shopping days state
@@ -813,6 +817,22 @@ export default function AdminPage() {
     setRouteLoading(false);
   }
 
+  async function handleAdminBagOverride(nonprofit_id) {
+    const val = adminBagOverride[nonprofit_id];
+    if (!val && val !== "0") return;
+    setAdminBagOverrideLoading(nonprofit_id);
+    const res = await fetch("/api/admin/bag-levels", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ nonprofit_id, bag_count: parseInt(val) }),
+    });
+    if (res.ok) {
+      setAdminBagOverride((prev) => ({ ...prev, [nonprofit_id]: "" }));
+      fetchBagLevels();
+    }
+    setAdminBagOverrideLoading(null);
+  }
+
   const NCT_ADDRESS = "6108 South College Ave STE C, Fort Collins, CO 80525";
 
   function buildGoogleMapsUrl(stops) {
@@ -837,6 +857,9 @@ export default function AdminPage() {
 
   function addStop(nonprofit) {
     if (routeStops.find((s) => s.nonprofit_id === nonprofit.id)) return;
+    // Pre-fill bags from pending request if available, otherwise from bag count or profile estimate
+    const requestBags = nonprofit.pending_request?.estimated_bags;
+    const bagsFill = requestBags ?? nonprofit.bag_count ?? nonprofit.estimated_bags ?? 0;
     setRouteStops((prev) => [...prev, {
       nonprofit_id: nonprofit.id,
       org_name: nonprofit.org_name,
@@ -844,7 +867,7 @@ export default function AdminPage() {
       address_street: nonprofit.address_street,
       address_city: nonprofit.address_city,
       address_state: nonprofit.address_state,
-      estimated_bags: nonprofit.estimated_bags ?? 0,
+      estimated_bags: bagsFill,
       stop_order: prev.length + 1,
       notes: "",
     }]);
@@ -867,6 +890,35 @@ export default function AdminPage() {
     if (res.ok) {
       setMessage(`✅ Appointment scheduled and ${selectedAppt.nonprofit_applications?.email} notified.`);
       setSelectedAppt(null); setApptDate(""); setApptTime(""); setApptAdminNotes("");
+      fetchAppointments();
+    } else {
+      const json = await res.json();
+      setMessage(`Error: ${json.error}`);
+    }
+    setApptLoading(false);
+  }
+
+  async function handleSendQuote() {
+    if (!selectedAppt) return;
+    if (!apptLaborCost || !apptShippingCost) {
+      setMessage("Error: Enter both labor cost and shipping cost.");
+      return;
+    }
+    setApptLoading(true); setMessage("");
+    const res = await fetch("/api/admin/exchange-appointments", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        id: selectedAppt.id,
+        action: "send_quote",
+        labor_cost: apptLaborCost,
+        shipping_cost: apptShippingCost,
+        admin_notes: apptAdminNotes || null,
+      }),
+    });
+    if (res.ok) {
+      setMessage(`✅ Quote sent to ${selectedAppt.nonprofit_applications?.email}.`);
+      setSelectedAppt(null); setApptLaborCost(""); setApptShippingCost(""); setApptAdminNotes("");
       fetchAppointments();
     } else {
       const json = await res.json();
@@ -1499,11 +1551,39 @@ export default function AdminPage() {
                               <span className="text-yellow-500">{SCHEDULE_BAGS} bags ({SCHEDULE_LBS} lbs)</span>
                               <span className="text-red-400">{TARGET_BAGS} bags ({TARGET_LBS} lbs)</span>
                             </div>
-                            {status && (
-                              <div className="mt-2">
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              {status && (
                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
-                              </div>
-                            )}
+                              )}
+                              {np.pending_request && (
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                  📋 Pickup Requested
+                                  {np.pending_request.estimated_bags ? ` · ${np.pending_request.estimated_bags} bags` : ""}
+                                  {np.pending_request.estimated_weight_lbs ? ` · ${np.pending_request.estimated_weight_lbs} lbs` : ""}
+                                  {np.pending_request.preferred_date ? ` · Pref: ${new Date(np.pending_request.preferred_date + "T12:00:00").toLocaleDateString()}` : ""}
+                                </span>
+                              )}
+                              {np.bag_count_is_admin && (
+                                <span className="text-xs text-gray-400 italic">(Admin set)</span>
+                              )}
+                            </div>
+                            {/* Admin manual bag count override */}
+                            <div className="mt-2 flex items-center gap-2">
+                              <input
+                                type="number" min="0"
+                                value={adminBagOverride[np.id] ?? ""}
+                                onChange={(e) => setAdminBagOverride((prev) => ({ ...prev, [np.id]: e.target.value }))}
+                                placeholder="Override bag count…"
+                                className="border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 w-40"
+                              />
+                              <button
+                                onClick={() => handleAdminBagOverride(np.id)}
+                                disabled={adminBagOverrideLoading === np.id || !adminBagOverride[np.id]}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded transition-colors disabled:opacity-40"
+                              >
+                                {adminBagOverrideLoading === np.id ? "Saving…" : "Set"}
+                              </button>
+                            </div>
                           </div>
                         );
                       })}
@@ -1721,6 +1801,11 @@ export default function AdminPage() {
                         <div>
                           <span className="font-medium">{np.org_name}</span>
                           <span className="text-gray-400 ml-2 text-xs">{[np.address_city, np.address_state].filter(Boolean).join(", ")}</span>
+                          {np.pending_request && (
+                            <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">
+                              Requested {np.pending_request.estimated_bags ? `${np.pending_request.estimated_bags} bags` : np.pending_request.estimated_weight_lbs ? `${np.pending_request.estimated_weight_lbs} lbs` : "pickup"}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3">
                           <span className={`font-bold ${bagColor(np.bag_count)}`}>
@@ -1919,7 +2004,7 @@ export default function AdminPage() {
              : (
               <div className="space-y-2">
                 {appointments.map((a) => (
-                  <button key={a.id} onClick={() => { setSelectedAppt(a); setApptDate(a.scheduled_date || ""); setApptTime(a.scheduled_time || ""); setApptAdminNotes(a.admin_notes || ""); }}
+                  <button key={a.id} onClick={() => { setSelectedAppt(a); setApptDate(a.scheduled_date || ""); setApptTime(a.scheduled_time || ""); setApptAdminNotes(a.admin_notes || ""); setApptLaborCost(a.labor_cost != null ? String(a.labor_cost) : ""); setApptShippingCost(a.shipping_cost != null ? String(a.shipping_cost) : ""); }}
                     className={`w-full text-left border rounded-lg px-4 py-3 transition-colors hover:border-nct-navy ${selectedAppt?.id === a.id ? "border-nct-navy bg-blue-50" : "border-gray-200"}`}
                   >
                     <div className="flex items-center justify-between">
@@ -1927,8 +2012,9 @@ export default function AdminPage() {
                         <p className="font-medium text-gray-900">{a.nonprofit_applications?.org_name}</p>
                         <p className="text-xs text-gray-500">
                           {a.appointment_type === "in_person" ? "In-Person" : "Delivery"}
-                          {a.preferred_date ? ` · Preferred: ${new Date(a.preferred_date).toLocaleDateString()}` : ""}
-                          {a.scheduled_date ? ` · Scheduled: ${new Date(a.scheduled_date).toLocaleDateString()}` : ""}
+                          {a.preferred_date ? ` · Preferred: ${new Date(a.preferred_date + "T12:00:00").toLocaleDateString()}` : ""}
+                          {a.scheduled_date ? ` · Scheduled: ${new Date(a.scheduled_date + "T12:00:00").toLocaleDateString()}` : ""}
+                          {a.appointment_type === "delivery" && a.quote_status ? ` · Quote: ${a.quote_status}` : ""}
                         </p>
                       </div>
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[a.status]}`}>{a.status}</span>
@@ -1955,10 +2041,13 @@ export default function AdminPage() {
               <dl className="space-y-1.5 text-sm mb-4">
                 {[
                   ["Type", selectedAppt.appointment_type === "in_person" ? "In-Person" : "Delivery"],
-                  ["Preferred Date", selectedAppt.preferred_date ? new Date(selectedAppt.preferred_date).toLocaleDateString() : null],
+                  ["Preferred Date", selectedAppt.preferred_date ? new Date(selectedAppt.preferred_date + "T12:00:00").toLocaleDateString() : null],
+                  ["Est. Bags", selectedAppt.estimated_bags ? `${selectedAppt.estimated_bags} bags` : null],
+                  ["Ship To", selectedAppt.ship_to_address],
                   ["Categories", selectedAppt.categories_requested?.join(", ")],
                   ["Their Notes", selectedAppt.notes],
                   ["Requested", new Date(selectedAppt.created_at).toLocaleString()],
+                  ["Quote Status", selectedAppt.quote_status ? selectedAppt.quote_status.charAt(0).toUpperCase() + selectedAppt.quote_status.slice(1) : null],
                 ].filter(([, v]) => v).map(([label, val]) => (
                   <div key={label} className="flex gap-2">
                     <dt className="text-gray-500 w-28 shrink-0">{label}:</dt>
@@ -1967,27 +2056,71 @@ export default function AdminPage() {
                 ))}
               </dl>
 
-              <div className="border-t border-gray-200 pt-4 space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Schedule Date</label>
-                    <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+              {/* Delivery cost quote section */}
+              {selectedAppt.appointment_type === "delivery" && selectedAppt.quote_status !== "confirmed" && (
+                <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 mb-4 space-y-2">
+                  <p className="text-xs font-semibold text-amber-800">
+                    {selectedAppt.quote_status === "quoted" ? "Quote Already Sent — Update & Resend" : "Send Delivery Cost Quote"}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Labor Cost ($)</label>
+                      <input type="number" min="0" step="0.01" value={apptLaborCost}
+                        onChange={(e) => setApptLaborCost(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">FedEx Shipping ($)</label>
+                      <input type="number" min="0" step="0.01" value={apptShippingCost}
+                        onChange={(e) => setApptShippingCost(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
-                    <input type="time" value={apptTime} onChange={(e) => setApptTime(e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
-                  </div>
+                  {apptLaborCost && apptShippingCost && (
+                    <p className="text-xs text-amber-700 font-medium">
+                      Total: ${(parseFloat(apptLaborCost || 0) + parseFloat(apptShippingCost || 0)).toFixed(2)}
+                    </p>
+                  )}
+                  <textarea value={apptAdminNotes} onChange={(e) => setApptAdminNotes(e.target.value)} rows={2}
+                    placeholder="Optional note to include in quote email"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                  <button onClick={handleSendQuote}
+                    disabled={apptLoading || !apptLaborCost || !apptShippingCost}
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded transition-colors disabled:opacity-40 text-sm">
+                    {apptLoading ? "Sending…" : "Send Quote to Partner"}
+                  </button>
                 </div>
-                <textarea value={apptAdminNotes} onChange={(e) => setApptAdminNotes(e.target.value)} rows={2}
-                  placeholder="Note to nonprofit (included in confirmation email)"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                <button onClick={handleScheduleAppt} disabled={apptLoading || !apptDate}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded transition-colors disabled:opacity-40">
-                  {apptLoading ? "Scheduling…" : "Confirm & Notify Nonprofit"}
-                </button>
-              </div>
+              )}
+
+              {/* Schedule section — show for in-person always, for delivery only after quote confirmed */}
+              {(selectedAppt.appointment_type === "in_person" || selectedAppt.quote_status === "confirmed") && (
+                <div className="border-t border-gray-200 pt-4 space-y-3">
+                  {selectedAppt.appointment_type === "delivery" && (
+                    <p className="text-xs text-green-700 font-medium">✅ Partner confirmed the quote — schedule the shipment.</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Schedule Date</label>
+                      <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+                      <input type="time" value={apptTime} onChange={(e) => setApptTime(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                  </div>
+                  <textarea value={apptAdminNotes} onChange={(e) => setApptAdminNotes(e.target.value)} rows={2}
+                    placeholder="Note to nonprofit (included in confirmation email)"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                  <button onClick={handleScheduleAppt} disabled={apptLoading || !apptDate}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded transition-colors disabled:opacity-40">
+                    {apptLoading ? "Scheduling…" : "Confirm & Notify Nonprofit"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

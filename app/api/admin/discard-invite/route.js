@@ -1,7 +1,7 @@
 import { createServiceClient } from "@/lib/supabase";
-import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -17,49 +17,27 @@ export async function POST(request) {
     return NextResponse.json({ error: "Missing discard_account_id and email." }, { status: 400 });
   }
 
-  const adminClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-
-  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/auth/update-password%3Fwelcome%3Dtrue`;
-
-  let linkData;
-  const { data: inviteLinkData, error: inviteError } = await adminClient.auth.admin.generateLink({
-    type: "invite",
-    email,
-    options: { redirectTo, data: { role: "discard", discard_account_id, setup_required: true } },
-  });
-
-  if (inviteError) {
-    const { data: recoveryData, error: recoveryError } = await adminClient.auth.admin.generateLink({
-      type: "recovery",
-      email,
-      options: { redirectTo },
-    });
-    if (recoveryError) return NextResponse.json({ error: recoveryError.message }, { status: 500 });
-    await adminClient.auth.admin.updateUserById(recoveryData.user.id, {
-      user_metadata: { role: "discard", discard_account_id, setup_required: true },
-    });
-    linkData = recoveryData;
-  } else {
-    linkData = inviteLinkData;
-  }
-
   const db = createServiceClient();
 
-  // Create/update profile with discard role
-  await db.from("profiles").upsert({
-    id: linkData.user.id,
-    role: "discard",
-    discard_account_id,
-  });
+  // Generate a short-lived invite token (7 days) — this is what goes in the email URL,
+  // NOT the one-time Supabase auth link. A fresh Supabase link is generated on-demand
+  // when the user actually clicks the button, so email scanners can't consume it.
+  const inviteToken = randomUUID();
+  const inviteExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Link user_id back to the discard account
-  await db.from("discard_accounts").update({ user_id: linkData.user.id }).eq("id", discard_account_id);
+  const { error: tokenError } = await db
+    .from("discard_accounts")
+    .update({ invite_token: inviteToken, invite_expires_at: inviteExpiresAt })
+    .eq("id", discard_account_id);
 
-  const activateUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/activate?link=${encodeURIComponent(linkData.properties.action_link)}`;
+  if (tokenError) {
+    console.error("Failed to store invite token:", tokenError);
+    return NextResponse.json({ error: "Failed to generate invite." }, { status: 500 });
+  }
+
+  // The activate URL contains only the short token — no Supabase auth link is embedded.
+  // A fresh auth link is generated server-side when the user clicks the button.
+  const activateUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/activate?discard_token=${inviteToken}`;
   const greeting = contact_name ? `Hi ${contact_name},` : "Hi,";
 
   const { error: emailError } = await resend.emails.send({
@@ -85,7 +63,7 @@ export async function POST(request) {
             </a>
           </p>
           <p style="font-size:13px;color:#666;margin:20px 0 0">
-            This link expires in 24 hours. Questions? Call us at (970) 232-9108.
+            This link expires in 7 days. Questions? Call us at (970) 232-9108.
           </p>
           <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />
           <p style="font-size:12px;color:#999;margin:0">
@@ -97,6 +75,6 @@ export async function POST(request) {
     `,
   });
 
-  if (emailError) return NextResponse.json({ error: "Account created but invite email failed to send." }, { status: 500 });
+  if (emailError) return NextResponse.json({ error: "Invite token saved but email failed to send." }, { status: 500 });
   return NextResponse.json({ success: true });
 }

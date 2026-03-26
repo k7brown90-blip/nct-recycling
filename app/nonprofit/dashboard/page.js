@@ -8,6 +8,8 @@ import NonprofitBinsBooker from "@/components/NonprofitBinsBooker";
 import AgreementDownloadButton from "@/components/AgreementDownloadButton";
 import TaxReceiptSection from "@/components/TaxReceiptSection";
 import ContainerRequestSection from "@/components/ContainerRequestSection";
+import AppointmentQuoteCard from "@/components/AppointmentQuoteCard";
+import PickupRequestForm from "@/components/PickupRequestForm";
 
 export const metadata = { title: "Nonprofit Partner Portal" };
 
@@ -92,6 +94,7 @@ export default async function NonprofitDashboard() {
             Keep this updated so NCT can accurately plan pickup routes. Update any time your storage level changes.
           </p>
           <BagCountForm />
+          <PickupRequestForm />
         </div>
       )}
 
@@ -122,12 +125,15 @@ export default async function NonprofitDashboard() {
             </p>
             {pendingAppt.scheduled_date && (
               <p className="text-sm text-blue-700 mt-1">
-                Scheduled: {new Date(pendingAppt.scheduled_date).toLocaleDateString()}
+                Scheduled: {new Date(pendingAppt.scheduled_date + "T12:00:00").toLocaleDateString()}
                 {pendingAppt.scheduled_time ? ` at ${pendingAppt.scheduled_time}` : ""}
               </p>
             )}
-            {pendingAppt.admin_notes && (
+            {pendingAppt.admin_notes && pendingAppt.quote_status !== "quoted" && (
               <p className="text-sm text-blue-600 mt-1">Note from NCT: {pendingAppt.admin_notes}</p>
+            )}
+            {pendingAppt.quote_status === "quoted" && (
+              <AppointmentQuoteCard appt={pendingAppt} />
             )}
           </div>
         ) : null}
@@ -145,10 +151,10 @@ export default async function NonprofitDashboard() {
                 <div>
                   <span className="font-medium capitalize">{a.appointment_type === "in_person" ? "In-Person" : "Delivery"}</span>
                   {a.scheduled_date && (
-                    <span className="text-gray-500 ml-2">{new Date(a.scheduled_date).toLocaleDateString()}</span>
+                    <span className="text-gray-500 ml-2">{new Date(a.scheduled_date + "T12:00:00").toLocaleDateString()}</span>
                   )}
                   {!a.scheduled_date && a.preferred_date && (
-                    <span className="text-gray-400 ml-2">Preferred: {new Date(a.preferred_date).toLocaleDateString()}</span>
+                    <span className="text-gray-400 ml-2">Preferred: {new Date(a.preferred_date + "T12:00:00").toLocaleDateString()}</span>
                   )}
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${APPT_STATUS_COLORS[a.status]}`}>

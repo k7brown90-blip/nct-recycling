@@ -112,8 +112,15 @@ export async function POST(request) {
     status: "open",
   });
 
-  // Fetch nonprofit details for notification
+  // Mark any pending pickup requests for nonprofits on this route as scheduled
   const nonprofitIds = stops.map((s) => s.nonprofit_id);
+  await db
+    .from("nonprofit_pickup_requests")
+    .update({ status: "scheduled" })
+    .in("nonprofit_id", nonprofitIds)
+    .eq("status", "pending");
+
+  // Fetch nonprofit details for notification
   const { data: nonprofits } = await db
     .from("nonprofit_applications")
     .select("id, org_name, contact_name, email")
@@ -157,25 +164,25 @@ export async function POST(request) {
     resend.emails.send({
       from: "NCT Recycling <donate@nctrecycling.com>",
       to: r.email,
-      subject: `New Load Available for Shopping — ${shoppingDateStr}`,
+      subject: `Shopping Day Confirmed — Book Now for ${shoppingDateStr}`,
       html: `
-        <h2>Fresh Load Available at NCT Recycling</h2>
+        <h2>New Shopping Day Available — Book Your Spot Now</h2>
         <p>Hi ${r.full_name?.split(" ")[0] || "there"},</p>
-        <p>A pickup route has been scheduled for <strong>${pickupDateStr}</strong>. Once the load is processed, shopping opens the following day.</p>
+        <p>A fresh load is being picked up on <strong>${pickupDateStr}</strong> and shopping opens the next day.</p>
         <table style="border-collapse:collapse;width:100%;max-width:500px;margin:16px 0">
           <tr style="background:#0b2a45;color:white">
             <td style="padding:10px 16px;font-weight:bold">Pickup Date</td>
             <td style="padding:10px 16px">${pickupDateStr}</td>
           </tr>
           <tr style="background:#f9f5e8">
-            <td style="padding:10px 16px;font-weight:bold;color:#0b2a45">Shopping Opens</td>
+            <td style="padding:10px 16px;font-weight:bold;color:#0b2a45">🛒 Shopping Opens</td>
             <td style="padding:10px 16px;font-weight:bold;color:#d49a22">${shoppingDateStr}</td>
           </tr>
         </table>
-        <p>Log in to your reseller portal to schedule your shopping visit for <strong>${shoppingDateStr}</strong>.</p>
+        <p><strong>Shopping visits are limited — book your time slot now to secure your spot.</strong></p>
         <p style="margin-top:16px">
-          <a href="https://www.nctrecycling.com/reseller/dashboard" style="background:#0b2a45;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;font-weight:bold;display:inline-block">
-            Schedule Your Visit →
+          <a href="https://www.nctrecycling.com/reseller/dashboard" style="background:#d49a22;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;font-weight:bold;display:inline-block;font-size:16px">
+            Book My Shopping Visit →
           </a>
         </p>
         <p style="margin-top:12px;font-size:13px;color:#666">
