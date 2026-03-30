@@ -5,7 +5,6 @@ export default function PickupRequestForm() {
   const [pending, setPending] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
 
   // Form state
   const [estimatedBags, setEstimatedBags] = useState("");
@@ -23,7 +22,6 @@ export default function PickupRequestForm() {
       const json = await res.json();
       setPending(json.pending);
       setHistory(json.history || []);
-      if (json.pending) setOpen(true); // auto-expand if there's a pending request
     }
     setLoading(false);
   }, []);
@@ -79,20 +77,9 @@ export default function PickupRequestForm() {
   if (loading) return null;
 
   return (
-    <div className="border-t border-gray-100 mt-4 pt-4">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 text-sm text-nct-navy font-semibold hover:underline"
-      >
-        <span>{open ? "▾" : "▸"}</span>
-        {pending ? "View Pending Pickup Request" : "Request a Pickup (no bag tracking needed)"}
-      </button>
-
-      {open && (
-        <div className="mt-3">
-          {/* Pending request display */}
-          {pending ? (
+    <div>
+      {/* Pending request display */}
+      {pending ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start justify-between gap-3 mb-2">
                 <p className="text-sm font-semibold text-yellow-800">Pickup Request Pending</p>
@@ -124,7 +111,7 @@ export default function PickupRequestForm() {
             /* Submission form */
             <form onSubmit={handleSubmit} className="space-y-3">
               <p className="text-xs text-gray-500">
-                Don't track bags? Just tell us roughly what you have and we'll schedule a pickup.
+                Tell us roughly what you have and we'll schedule a pickup. Our driver will confirm the count on arrival.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -187,24 +174,22 @@ export default function PickupRequestForm() {
             </form>
           )}
 
-          {/* History */}
-          {history.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-500 mb-2">Recent Requests</p>
-              <div className="space-y-1">
-                {history.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between text-xs text-gray-400">
-                    <span>
-                      {new Date(r.created_at).toLocaleDateString()}
-                      {r.estimated_bags ? ` · ${r.estimated_bags} bags` : ""}
-                      {r.estimated_weight_lbs ? ` · ${r.estimated_weight_lbs} lbs` : ""}
-                    </span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${STATUS_COLORS[r.status]}`}>{r.status}</span>
-                  </div>
-                ))}
+      {/* History */}
+      {history.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <p className="text-xs font-medium text-gray-500 mb-2">Recent Requests</p>
+          <div className="space-y-1">
+            {history.map((r) => (
+              <div key={r.id} className="flex items-center justify-between text-xs text-gray-400">
+                <span>
+                  {new Date(r.created_at).toLocaleDateString()}
+                  {r.estimated_bags ? ` · ${r.estimated_bags} bags` : ""}
+                  {r.estimated_weight_lbs ? ` · ${r.estimated_weight_lbs} lbs` : ""}
+                </span>
+                <span className={`px-1.5 py-0.5 rounded-full text-xs ${STATUS_COLORS[r.status]}`}>{r.status}</span>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
     </div>

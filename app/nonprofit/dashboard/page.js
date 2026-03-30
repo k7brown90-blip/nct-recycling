@@ -73,7 +73,7 @@ export default async function NonprofitDashboard() {
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Account Type</p>
             <p className="text-xl font-bold text-nct-navy">LTL Partner</p>
-            <p className="text-xs text-gray-500 mt-1">Bag-tracked pickup</p>
+            <p className="text-xs text-gray-500 mt-1">Request-based pickup</p>
           </div>
         )}
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
@@ -84,17 +84,25 @@ export default async function NonprofitDashboard() {
         </div>
       </div>
 
-      {/* Bag count (LTL) or Container pickup request (FL) */}
+      {/* Pickup request (LTL) or Container pickup request (FL) */}
       {app?.account_type === "fl" ? (
         <ContainerRequestSection />
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-          <h2 className="font-bold text-nct-navy text-lg mb-1">Donation Bag Count</h2>
+          <h2 className="font-bold text-nct-navy text-lg mb-1">Request a Pickup</h2>
           <p className="text-sm text-gray-500 mb-4">
-            Keep this updated so NCT can accurately plan pickup routes. Update any time your storage level changes.
+            Let us know you&apos;re ready — enter your estimated weight and we&apos;ll add you to an upcoming route.
+            Our driver will confirm the exact count on arrival.
           </p>
-          <BagCountForm />
           <PickupRequestForm />
+          <details className="mt-5 border-t border-gray-100 pt-4">
+            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 select-none">
+              Optional: track bag count manually
+            </summary>
+            <div className="mt-3">
+              <BagCountForm />
+            </div>
+          </details>
         </div>
       )}
 
