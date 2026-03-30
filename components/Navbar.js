@@ -78,7 +78,7 @@ export default function Navbar() {
                   Reseller Application
                 </Link>
                 <Link
-                  href="/nonprofit-apply"
+                  href="/co-op-apply"
                   onClick={() => setApplyOpen(false)}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-nct-navy"
                 >
@@ -138,7 +138,7 @@ export default function Navbar() {
               Reseller Application
             </Link>
             <Link
-              href="/nonprofit-apply"
+              href="/co-op-apply"
               className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors"
               onClick={() => setMenuOpen(false)}
             >

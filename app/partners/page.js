@@ -207,7 +207,7 @@ export default function PartnersPage() {
 
         <div className="text-center">
           <Link
-            href="/nonprofit-apply"
+            href="/co-op-apply"
             className="inline-block bg-nct-navy hover:bg-nct-navy-dark text-white font-bold px-8 py-3 rounded transition-colors"
           >
             Apply to Join the Co-op →
@@ -396,7 +396,7 @@ export default function PartnersPage() {
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
           <Link
-            href="/nonprofit-apply"
+            href="/co-op-apply"
             className="bg-white text-nct-navy hover:bg-gray-100 font-bold px-6 py-3 rounded transition-colors"
           >
             Nonprofit Co-op Application →

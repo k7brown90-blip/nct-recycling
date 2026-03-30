@@ -41,7 +41,7 @@ export default function Footer() {
             <li><Link href="/partners#retail" className="hover:text-nct-gold transition-colors">Retail Partners</Link></li>
             <li><Link href="/partners#wholesale" className="hover:text-nct-gold transition-colors">Wholesale Buyers</Link></li>
             <li><Link href="/contact" className="hover:text-nct-gold transition-colors">Contact Us</Link></li>
-            <li><Link href="/nonprofit-apply" className="hover:text-nct-gold transition-colors">Co-op Application</Link></li>
+            <li><Link href="/co-op-apply" className="hover:text-nct-gold transition-colors">Co-op Application</Link></li>
             <li><Link href="/apply" className="hover:text-nct-gold transition-colors">Retail Application</Link></li>
           </ul>
         </div>
