@@ -52,8 +52,10 @@ export default function Footer() {
             <p>6108 South College Ave, STE C<br />Fort Collins, CO 80525</p>
             <p>
               <span className="text-white font-medium">Hours:</span><br />
-              Mon–Thu 10am–4pm (Boutique)<br />
-              Mon–Thu 12pm–4pm (Bins)
+              Mon–Thu 12–8PM (Boutique)<br />
+              Tue–Thu 12–4PM (Resellers) · 4–8PM (Public)<br />
+              Sunday 12–4PM (Bins, open to all)<br />
+              Closed Fri &amp; Sat
             </p>
             <p>
               <a href="tel:+19702329108" className="hover:text-nct-gold transition-colors">(970) 232-9108</a>

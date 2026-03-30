@@ -28,7 +28,13 @@ const localBusinessSchema = {
     {
       "@type": "OpeningHoursSpecification",
       dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday"],
-      opens: "10:00",
+      opens: "12:00",
+      closes: "20:00",
+    },
+    {
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: ["Sunday"],
+      opens: "12:00",
       closes: "16:00",
     },
   ],
@@ -61,7 +67,7 @@ const tiers = [
     price: "$2.00 / lb",
     icon: "⬛",
     description:
-      "Dig through freshly restocked bins every day. Open Monday–Thursday starting at noon after our morning restock.",
+      "Dig through rotating vintage, Y2K, and branded inventory. Reseller access Tue–Thu 12–4PM (portal required). Public access Tue–Thu 4–8PM and Sunday 12–4PM.",
     cta: "How Bins Work",
     href: "/shop#bins",
     accent: "border-blue-400",

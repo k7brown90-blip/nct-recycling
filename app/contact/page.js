@@ -1,7 +1,7 @@
 export const metadata = {
   title: "Contact & Hours — Fort Collins, CO",
   description:
-    "Visit NCT Recycling at 6108 South College Ave STE C, Fort Collins CO. Open Monday–Thursday 10am–4pm. 24/7 donation drop-off available. Call (970) 232-9108.",
+    "Visit NCT Emporium at 6108 South College Ave STE C, Fort Collins CO. Boutique Mon–Thu 12–8PM. Bins Tue–Thu + Sunday. 24/7 donation drop-off. Call (970) 232-9108.",
 };
 
 export default function ContactPage() {
@@ -10,7 +10,7 @@ export default function ContactPage() {
       <h1 className="text-4xl font-bold text-nct-navy mb-4 text-center">Contact & Hours</h1>
       <p className="text-center text-gray-600 mb-16 max-w-xl mx-auto">
         Come visit us in Fort Collins. Drop off donations 24/7, or shop the boutique and
-        bins Monday–Thursday.
+        bins Tuesday–Thursday and Sunday.
       </p>
 
       <div className="grid md:grid-cols-2 gap-12 mb-16">
@@ -39,11 +39,23 @@ export default function ContactPage() {
               <tbody>
                 <tr className="border-b border-gray-100">
                   <td className="py-2 font-medium text-nct-navy w-1/2">Boutique</td>
-                  <td className="py-2">Monday–Thursday, 10am–4pm</td>
+                  <td className="py-2">Monday–Thursday, 12PM–8PM<br /><span className="text-xs text-gray-500">Monday = boutique only (no bins)</span></td>
                 </tr>
                 <tr className="border-b border-gray-100">
-                  <td className="py-2 font-medium text-nct-navy">Bins</td>
-                  <td className="py-2">Monday–Thursday, 12pm–4pm</td>
+                  <td className="py-2 font-medium text-nct-navy">Bins — Resellers</td>
+                  <td className="py-2">Tuesday–Thursday, 12PM–4PM<br /><span className="text-xs text-gray-500">Portal scheduling required</span></td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-2 font-medium text-nct-navy">Bins — Public</td>
+                  <td className="py-2">Tuesday–Thursday, 4PM–8PM</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-2 font-medium text-nct-navy">Sunday Bin Sale</td>
+                  <td className="py-2">Sunday, 12PM–4PM<br /><span className="text-xs text-gray-500">Open to everyone · $2.00/lb</span></td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-2 font-medium text-nct-navy">Closed</td>
+                  <td className="py-2">Friday &amp; Saturday</td>
                 </tr>
                 <tr>
                   <td className="py-2 font-medium text-nct-navy">Donation Drop-Off</td>
@@ -51,9 +63,6 @@ export default function ContactPage() {
                 </tr>
               </tbody>
             </table>
-            <p className="text-xs text-gray-500 mt-2">
-              Bins are restocked fresh every morning. Arrive at noon for the best selection.
-            </p>
           </div>
 
           <div>
