@@ -5,12 +5,74 @@ function checkAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.DRIVER_PIN}`;
 }
 
-// GET — active routes (scheduled + in_progress)
+// GET — calendar view, single date, or active routes
 export async function GET(request) {
   if (!checkAuth(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
+  const { searchParams } = new URL(request.url);
+  const view = searchParams.get("view");
+  const date = searchParams.get("date");
 
+  // Calendar view: minimal data for a date range
+  if (view === "calendar") {
+    const start = searchParams.get("start");
+    const end = searchParams.get("end");
+    if (!start || !end) return NextResponse.json({ error: "start and end required." }, { status: 400 });
+
+    const { data: routes } = await db
+      .from("pickup_routes")
+      .select("id, scheduled_date, status")
+      .gte("scheduled_date", start)
+      .lte("scheduled_date", end)
+      .neq("status", "cancelled");
+
+    if (!routes?.length) return NextResponse.json({ dates: {} });
+
+    const routeIds = routes.map((r) => r.id);
+    const { data: stops } = await db
+      .from("pickup_route_stops")
+      .select("route_id, stop_status")
+      .in("route_id", routeIds);
+
+    const dates = {};
+    for (const r of routes) {
+      const routeStops = stops?.filter((s) => s.route_id === r.id) || [];
+      dates[r.scheduled_date] = {
+        id: r.id,
+        status: r.status,
+        stop_count: routeStops.length,
+        completed_count: routeStops.filter((s) => s.stop_status === "completed").length,
+      };
+    }
+    return NextResponse.json({ dates });
+  }
+
+  // Single date detail
+  if (date) {
+    const { data: route } = await db
+      .from("pickup_routes")
+      .select("*")
+      .eq("scheduled_date", date)
+      .neq("status", "cancelled")
+      .maybeSingle();
+
+    if (!route) return NextResponse.json({ route: null });
+
+    const { data: stops } = await db
+      .from("pickup_route_stops")
+      .select(`
+        id, route_id, stop_order, estimated_bags, actual_bags, stop_status, completed_at, notes, no_inventory,
+        nonprofit_id,
+        nonprofit_applications (org_name, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions, storage_capacity_bags)
+      `)
+      .eq("route_id", route.id)
+      .order("stop_order");
+
+    return NextResponse.json({ route: { ...route, stops: stops || [] } });
+  }
+
+  // Default: active routes (scheduled + in_progress) with full stop detail
   const { data: routes, error } = await db
     .from("pickup_routes")
     .select("*")
@@ -23,9 +85,9 @@ export async function GET(request) {
   const { data: stops } = await db
     .from("pickup_route_stops")
     .select(`
-      id, route_id, stop_order, estimated_bags, actual_bags, stop_status, completed_at, notes,
+      id, route_id, stop_order, estimated_bags, actual_bags, stop_status, completed_at, notes, no_inventory,
       nonprofit_id,
-      nonprofit_applications (org_name, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions)
+      nonprofit_applications (org_name, phone, address_street, address_city, address_state, available_pickup_hours, dock_instructions, storage_capacity_bags)
     `)
     .in("route_id", routeIds.length ? routeIds : ["00000000-0000-0000-0000-000000000000"])
     .order("stop_order");
@@ -36,11 +98,10 @@ export async function GET(request) {
     stopsByRoute[s.route_id].push(s);
   }
 
-  const result = routes.map((r) => ({ ...r, stops: stopsByRoute[r.id] || [] }));
-  return NextResponse.json({ routes: result });
+  return NextResponse.json({ routes: routes.map((r) => ({ ...r, stops: stopsByRoute[r.id] || [] })) });
 }
 
-// PATCH — mark stop complete + reset bag counter, or update route status
+// PATCH — complete stop (with bags or no_inventory), update route status
 export async function PATCH(request) {
   if (!checkAuth(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
@@ -48,6 +109,7 @@ export async function PATCH(request) {
   const { action } = body;
   const db = createServiceClient();
 
+  // Complete stop with actual bag count
   if (action === "complete_stop") {
     const { stop_id, nonprofit_id, route_id, actual_bags } = body;
     if (!stop_id || !nonprofit_id) return NextResponse.json({ error: "Missing fields." }, { status: 400 });
@@ -55,6 +117,7 @@ export async function PATCH(request) {
     await db.from("pickup_route_stops").update({
       stop_status: "completed",
       actual_bags: actual_bags ?? null,
+      no_inventory: false,
       completed_at: new Date().toISOString(),
     }).eq("id", stop_id);
 
@@ -77,11 +140,60 @@ export async function PATCH(request) {
     return NextResponse.json({ success: true });
   }
 
+  // No inventory at this stop
+  if (action === "no_inventory_stop") {
+    const { stop_id, nonprofit_id, route_id } = body;
+    if (!stop_id || !nonprofit_id) return NextResponse.json({ error: "Missing fields." }, { status: 400 });
+
+    await db.from("pickup_route_stops").update({
+      stop_status: "completed",
+      actual_bags: 0,
+      no_inventory: true,
+      completed_at: new Date().toISOString(),
+    }).eq("id", stop_id);
+
+    // Check for consecutive no_inventory stops (missed pickup warning)
+    // Returns true if the last 2 completed stops for this org were no_inventory
+    const { data: recentStops } = await db
+      .from("pickup_route_stops")
+      .select("no_inventory, completed_at")
+      .eq("nonprofit_id", nonprofit_id)
+      .eq("stop_status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(2);
+
+    const consecutiveMissed = recentStops?.length === 2 && recentStops.every((s) => s.no_inventory);
+
+    return NextResponse.json({ success: true, consecutive_no_inventory: consecutiveMissed });
+  }
+
+  // Update route status
   if (action === "update_route_status") {
     const { route_id, status } = body;
     if (!route_id || !status) return NextResponse.json({ error: "Missing fields." }, { status: 400 });
     const valid = ["in_progress", "completed", "cancelled"];
     if (!valid.includes(status)) return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+
+    if (status === "completed") {
+      // Determine completion type: full if all stops done, partial otherwise
+      const { data: stops } = await db
+        .from("pickup_route_stops")
+        .select("stop_status")
+        .eq("route_id", route_id);
+
+      const allDone = stops?.every((s) => s.stop_status === "completed");
+      const completion_type = allDone ? "full" : "partial";
+
+      await db.from("pickup_routes").update({ status: "completed", completion_type }).eq("id", route_id);
+
+      // Ensure shopping day is open (it should already be, but confirm)
+      await db.from("shopping_days").update({ status: "open" })
+        .eq("route_id", route_id)
+        .neq("status", "open");
+
+      return NextResponse.json({ success: true, completion_type });
+    }
+
     await db.from("pickup_routes").update({ status }).eq("id", route_id);
     return NextResponse.json({ success: true });
   }

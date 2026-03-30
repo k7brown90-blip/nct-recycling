@@ -222,7 +222,7 @@ export async function POST(request) {
   return NextResponse.json({ success: true });
 }
 
-// DELETE — cancel a booking
+// DELETE — cancel a booking (by shopping_day_id + slot_type)
 export async function DELETE(request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -240,6 +240,32 @@ export async function DELETE(request) {
     .eq("shopping_day_id", shopping_day_id)
     .eq("reseller_id", reseller.id)
     .eq("slot_type", slot_type);
+
+  // Send cancellation email
+  const { data: day } = await db
+    .from("shopping_days")
+    .select("shopping_date")
+    .eq("id", shopping_day_id)
+    .maybeSingle();
+
+  if (day) {
+    const info = SLOT_INFO[slot_type] || { label: slot_type, hours: "" };
+    const dateStr = new Date(day.shopping_date + "T12:00:00").toLocaleDateString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+    });
+    resend.emails.send({
+      from: "NCT Recycling <donate@nctrecycling.com>",
+      to: reseller.email,
+      subject: `Booking Cancelled — ${info.label} · ${dateStr}`,
+      html: `
+        <p>Hi ${reseller.full_name?.split(" ")[0] || "there"},</p>
+        <p>Your <strong>${info.label}</strong> booking for <strong>${dateStr}</strong> has been cancelled.</p>
+        <p>If you'd like to rebook, visit your <a href="https://www.nctrecycling.com/reseller/dashboard">reseller portal</a>.</p>
+        <p>Questions? Call <a href="tel:+19702329108">(970) 232-9108</a> or email <a href="mailto:donate@nctrecycling.com">donate@nctrecycling.com</a>.</p>
+        <p>— NCT Recycling Team</p>
+      `,
+    }).catch((err) => console.error("Cancellation email error:", err));
+  }
 
   return NextResponse.json({ success: true });
 }

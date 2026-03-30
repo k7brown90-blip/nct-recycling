@@ -86,11 +86,12 @@ export async function PATCH(request) {
     "org_name", "org_type", "contact_name", "contact_title", "phone", "website",
     "address_street", "address_city", "address_state", "address_zip",
     "pickup_address", "available_pickup_hours", "dock_instructions",
-    "estimated_bags",
+    "estimated_bags", "storage_capacity_bags",
   ];
+  const INT_FIELDS = ["estimated_bags", "storage_capacity_bags"];
   for (const field of PROFILE_FIELDS) {
     if (body[field] !== undefined) {
-      updates[field] = field === "estimated_bags"
+      updates[field] = INT_FIELDS.includes(field)
         ? (body[field] === "" || body[field] === null ? null : parseInt(body[field]))
         : (body[field] || null);
     }

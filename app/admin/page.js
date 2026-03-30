@@ -12,7 +12,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts"];
+const SECTIONS = ["Dashboard", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -43,7 +43,8 @@ export default function AdminPage() {
     const saved = localStorage.getItem("nct_admin_secret");
     if (saved) setSecret(saved);
   }, []);
-  const [section, setSection] = useState("Reseller Apps");
+  const [section, setSection] = useState("Dashboard");
+  const [dashboard, setDashboard] = useState(null);
   const [message, setMessage] = useState("");
 
   // Applications state
@@ -150,6 +151,11 @@ export default function AdminPage() {
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
 
   const authHeader = { Authorization: `Bearer ${secret}` };
+
+  const fetchDashboard = useCallback(async () => {
+    const res = await fetch("/api/admin/dashboard", { headers: authHeader });
+    if (res.ok) setDashboard(await res.json());
+  }, [secret]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchApplications = useCallback(async () => {
     setLoading(true);
@@ -331,6 +337,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authed) return;
     setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
+    if (section === "Dashboard") fetchDashboard();
     if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
@@ -338,7 +345,7 @@ export default function AdminPage() {
     if (section === "Shopping Days") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
     if (section === "Discard Accounts") fetchDiscardAccounts();
-  }, [authed, section, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts]);
+  }, [authed, section, fetchDashboard, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts]);
 
   useEffect(() => {
     setEditingDiscard(false);
@@ -969,6 +976,77 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* ===== DASHBOARD ===== */}
+      {section === "Dashboard" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">At-a-glance portal status.</p>
+            <button onClick={fetchDashboard} className="px-3 py-1.5 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
+          </div>
+          {!dashboard ? (
+            <p className="text-gray-400 text-sm">Loading…</p>
+          ) : (
+            <div className="space-y-4">
+              {/* Action items */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <button onClick={() => { setSection("Co-op Apps"); setFilter("pending"); }}
+                  className={`rounded-xl p-4 text-left border-2 transition-colors ${dashboard.pending_nonprofits > 0 ? "bg-yellow-50 border-yellow-300 hover:bg-yellow-100" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
+                  <p className={`text-3xl font-bold ${dashboard.pending_nonprofits > 0 ? "text-yellow-700" : "text-gray-400"}`}>{dashboard.pending_nonprofits}</p>
+                  <p className="text-xs font-semibold text-gray-600 mt-1">Pending Co-op Apps</p>
+                </button>
+                <button onClick={() => { setSection("Reseller Apps"); setFilter("pending"); }}
+                  className={`rounded-xl p-4 text-left border-2 transition-colors ${dashboard.pending_resellers > 0 ? "bg-yellow-50 border-yellow-300 hover:bg-yellow-100" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
+                  <p className={`text-3xl font-bold ${dashboard.pending_resellers > 0 ? "text-yellow-700" : "text-gray-400"}`}>{dashboard.pending_resellers}</p>
+                  <p className="text-xs font-semibold text-gray-600 mt-1">Pending Reseller Apps</p>
+                </button>
+                <button onClick={() => setSection("Bag Levels")}
+                  className={`rounded-xl p-4 text-left border-2 transition-colors ${dashboard.pending_pickup_requests > 0 ? "bg-amber-50 border-amber-300 hover:bg-amber-100" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
+                  <p className={`text-3xl font-bold ${dashboard.pending_pickup_requests > 0 ? "text-amber-700" : "text-gray-400"}`}>{dashboard.pending_pickup_requests}</p>
+                  <p className="text-xs font-semibold text-gray-600 mt-1">Pickup Requests</p>
+                </button>
+              </div>
+              {/* Today's route */}
+              <div className={`rounded-xl p-4 border ${dashboard.today_route ? "bg-nct-navy text-white border-nct-navy" : "bg-gray-50 border-gray-200"}`}>
+                <p className="text-xs font-bold uppercase tracking-wide mb-1 opacity-70">Today's Route</p>
+                {dashboard.today_route ? (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-lg">{new Date(dashboard.today_route.scheduled_date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p>
+                      <p className="text-sm opacity-80 mt-0.5">
+                        {dashboard.today_route.actual_total_bags != null ? `${dashboard.today_route.actual_total_bags} bags actual` : `${dashboard.today_route.estimated_total_bags ?? "—"} bags est.`}
+                      </p>
+                    </div>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${STATUS_COLORS[dashboard.today_route.status] || "bg-white/20 text-white"}`}>
+                      {dashboard.today_route.status}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-sm">No route scheduled for today.</p>
+                )}
+              </div>
+              {/* Next shopping day */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">Next Shopping Day</p>
+                {dashboard.next_shopping_day ? (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-nct-navy">
+                        {new Date(dashboard.next_shopping_day.shopping_date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-0.5">{dashboard.next_shopping_day.booking_count} confirmed bookings</p>
+                    </div>
+                    <button onClick={() => setSection("Shopping Days")}
+                      className="text-xs text-nct-navy underline hover:text-nct-navy-dark">View →</button>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-sm">No upcoming shopping days.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ===== APPLICATIONS (Reseller or Nonprofit) ===== */}
       {(section === "Reseller Apps" || section === "Co-op Apps") && (
         <>
@@ -1232,6 +1310,7 @@ export default function AdminPage() {
                                     available_pickup_hours: app.available_pickup_hours || "",
                                     dock_instructions: app.dock_instructions || "",
                                     estimated_bags: app.estimated_bags ?? "",
+                                    storage_capacity_bags: app.storage_capacity_bags ?? 40,
                                   });
                                 }
                                 setEditingProfile((v) => !v);
@@ -1266,10 +1345,16 @@ export default function AdminPage() {
                                     </select>
                                   </div>
                                   <div>
-                                    <label className="text-xs text-gray-500 block mb-0.5">Default Bag Capacity</label>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Default Bag Estimate</label>
                                     <input type="number" min="0" value={profileEdits.estimated_bags ?? ""} onChange={(e) => setProfileEdits((p) => ({ ...p, estimated_bags: e.target.value }))}
                                       placeholder="e.g. 24" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
                                     <p className="text-xs text-gray-400 mt-0.5">Pre-filled when adding to a route</p>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-0.5">Storage Capacity (bags)</label>
+                                    <input type="number" min="1" value={profileEdits.storage_capacity_bags ?? 40} onChange={(e) => setProfileEdits((p) => ({ ...p, storage_capacity_bags: parseInt(e.target.value) || 40 }))}
+                                      placeholder="40" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                                    <p className="text-xs text-gray-400 mt-0.5">Used to calculate fill_level estimates</p>
                                   </div>
                                   <div>
                                     <label className="text-xs text-gray-500 block mb-0.5">Contact Name</label>
@@ -1558,32 +1643,29 @@ export default function AdminPage() {
                               {np.pending_request && (
                                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
                                   📋 Pickup Requested
-                                  {np.pending_request.estimated_bags ? ` · ${np.pending_request.estimated_bags} bags` : ""}
-                                  {np.pending_request.estimated_weight_lbs ? ` · ${np.pending_request.estimated_weight_lbs} lbs` : ""}
-                                  {np.pending_request.preferred_date ? ` · Pref: ${new Date(np.pending_request.preferred_date + "T12:00:00").toLocaleDateString()}` : ""}
+                                  {np.pending_request.fill_level ? ` · ${np.pending_request.fill_level}` : ""}
+                                  {np.pending_request.estimated_bags ? ` (~${np.pending_request.estimated_bags} bags)` : ""}
                                 </span>
                               )}
                               {np.bag_count_is_admin && (
                                 <span className="text-xs text-gray-400 italic">(Admin set)</span>
                               )}
                             </div>
-                            {/* Admin manual bag count override */}
-                            <div className="mt-2 flex items-center gap-2">
-                              <input
-                                type="number" min="0"
-                                value={adminBagOverride[np.id] ?? ""}
-                                onChange={(e) => setAdminBagOverride((prev) => ({ ...prev, [np.id]: e.target.value }))}
-                                placeholder="Override bag count…"
-                                className="border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 w-40"
-                              />
-                              <button
-                                onClick={() => handleAdminBagOverride(np.id)}
-                                disabled={adminBagOverrideLoading === np.id || !adminBagOverride[np.id]}
-                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded transition-colors disabled:opacity-40"
-                              >
-                                {adminBagOverrideLoading === np.id ? "Saving…" : "Set"}
-                              </button>
-                            </div>
+                            {/* Estimated vs actual row */}
+                            {np.pending_request && (
+                              <div className="mt-2 text-xs text-gray-500 border-t border-gray-100 pt-2">
+                                <span className="font-medium text-amber-700">📋 Requested:</span>{" "}
+                                {np.pending_request.fill_level ? (
+                                  <span className="capitalize">{np.pending_request.fill_level} (~{np.pending_request.estimated_bags} bags est.)</span>
+                                ) : np.pending_request.estimated_bags ? (
+                                  <span>{np.pending_request.estimated_bags} bags</span>
+                                ) : null}
+                                {np.pending_request.preferred_date && (
+                                  <span className="text-gray-400 ml-2">Pref: {new Date(np.pending_request.preferred_date + "T12:00:00").toLocaleDateString()}</span>
+                                )}
+                                {np.pending_request.notes && <span className="text-gray-400 ml-2">· {np.pending_request.notes}</span>}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
