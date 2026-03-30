@@ -1,5 +1,8 @@
 import { createServiceClient } from "@/lib/supabase";
+import { Resend } from "resend";
 import { NextResponse } from "next/server";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 function checkAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.DRIVER_PIN}`;
@@ -128,6 +131,32 @@ export async function PATCH(request) {
       entry_type: "pickup",
       notes: `Picked up by NCT — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
     });
+
+    // Send pickup confirmation email to nonprofit
+    if (route_id) {
+      const [{ data: np }, { data: route }] = await Promise.all([
+        db.from("nonprofit_applications").select("org_name, contact_name, email").eq("id", nonprofit_id).maybeSingle(),
+        db.from("pickup_routes").select("scheduled_date").eq("id", route_id).maybeSingle(),
+      ]);
+      if (np?.email && route?.scheduled_date) {
+        const dateStr = new Date(route.scheduled_date + "T12:00:00").toLocaleDateString("en-US", {
+          weekday: "long", year: "numeric", month: "long", day: "numeric",
+        });
+        resend.emails.send({
+          from: "NCT Recycling <donate@nctrecycling.com>",
+          to: np.email,
+          subject: `Pickup Confirmed — ${dateStr}`,
+          html: `
+            <p>Hi ${np.contact_name?.split(" ")[0] || "there"},</p>
+            <p>NCT picked up your donation bags from <strong>${np.org_name}</strong> on <strong>${dateStr}</strong>.</p>
+            ${actual_bags ? `<p>We collected <strong>${actual_bags} bag${actual_bags !== 1 ? "s" : ""}</strong> — thank you for your contribution to the co-op!</p>` : ""}
+            <p>Your bag count in the portal has been reset to zero. When your next load is ready, log in to submit a new pickup request.</p>
+            <p>Questions? Call <a href="tel:+19702329108">(970) 232-9108</a> or email <a href="mailto:donate@nctrecycling.com">donate@nctrecycling.com</a>.</p>
+            <p>— NCT Recycling Team</p>
+          `,
+        }).catch((err) => console.error("Pickup confirmation email error:", err));
+      }
+    }
 
     // Update route actual_total_bags
     if (actual_bags && route_id) {

@@ -16,7 +16,7 @@ const APPT_STATUS_COLORS = {
 };
 
 // section: null | "pickup" | "inventory" | "receipts"
-export default function NonprofitDashboardClient({ app, user, appointments, pendingAppt }) {
+export default function NonprofitDashboardClient({ app, user, appointments, pendingAppt, recentPickups }) {
   const [section, setSection] = useState(null);
   const [inventoryTab, setInventoryTab] = useState("bins"); // "bins" | "delivery"
 
@@ -207,6 +207,34 @@ export default function NonprofitDashboardClient({ app, user, appointments, pend
           <span className="ml-auto text-gray-400 text-xl">›</span>
         </button>
       </div>
+
+      {/* Recent Pickups */}
+      {recentPickups && recentPickups.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+          <h3 className="font-bold text-nct-navy mb-3">Recent Pickups</h3>
+          <div className="space-y-2">
+            {recentPickups.map((p, i) => {
+              const dateStr = p.pickup_routes?.scheduled_date
+                ? new Date(p.pickup_routes.scheduled_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                : "—";
+              return (
+                <div key={i} className="flex items-center justify-between text-sm border-b border-gray-50 pb-2 last:border-0 last:pb-0">
+                  <div>
+                    <span className="font-medium">{dateStr}</span>
+                    {p.no_inventory
+                      ? <span className="text-gray-400 ml-2 text-xs">No bags found</span>
+                      : p.actual_bags != null && <span className="text-gray-500 ml-2">{p.actual_bags} bag{p.actual_bags !== 1 ? "s" : ""} collected</span>
+                    }
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${p.no_inventory ? "bg-gray-100 text-gray-500" : "bg-green-100 text-green-700"}`}>
+                    {p.no_inventory ? "No inventory" : "Completed"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Appointment history */}
       {appointments && appointments.length > 0 && (

@@ -23,9 +23,16 @@ export default async function NonprofitDashboard() {
   const [
     { data: app },
     { data: appointments },
+    { data: recentPickups },
   ] = await Promise.all([
     db.from("nonprofit_applications").select("*").eq("id", profile.application_id).maybeSingle(),
     db.from("exchange_appointments").select("*").eq("nonprofit_id", profile.application_id).order("created_at", { ascending: false }),
+    db.from("pickup_route_stops")
+      .select("actual_bags, completed_at, no_inventory, pickup_routes(scheduled_date)")
+      .eq("nonprofit_id", profile.application_id)
+      .eq("stop_status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(5),
   ]);
 
   const pendingAppt = appointments?.find((a) => a.status === "requested" || a.status === "scheduled");
@@ -37,6 +44,7 @@ export default async function NonprofitDashboard() {
         user={{ email: user.email }}
         appointments={appointments || []}
         pendingAppt={pendingAppt || null}
+        recentPickups={recentPickups || []}
       />
     </main>
   );
