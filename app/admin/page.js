@@ -33,6 +33,24 @@ function bagBarColor(count) {
   return "bg-green-500";
 }
 
+// Shopping-days calendar helpers
+const SD_MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const SD_DAY_LABELS  = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+function buildSdGrid(year, month) {
+  const first = new Date(year, month, 1).getDay();
+  const days  = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push(null);
+  for (let d = 1; d <= days; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+function sdDateStr(year, month, day) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export default function AdminPage() {
   const [secret, setSecret] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -94,6 +112,9 @@ export default function AdminPage() {
   const [shoppingDayLoading, setShoppingDayLoading] = useState(false);
   const [newShoppingDay, setNewShoppingDay] = useState({ shopping_date: "", wholesale_capacity: "", bins_capacity: "" });
   const [showNewShoppingDay, setShowNewShoppingDay] = useState(false);
+  const [sdCalYear, setSdCalYear]           = useState(new Date().getFullYear());
+  const [sdCalMonth, setSdCalMonth]         = useState(new Date().getMonth());
+  const [selectedShoppingDate, setSelectedShoppingDate] = useState(null);
 
   // Donation lots state (tab overview)
   const [lots, setLots] = useState([]);
@@ -2401,11 +2422,107 @@ export default function AdminPage() {
             </form>
           )}
 
+          {/* ── Calendar navigation ── */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => { if (sdCalMonth === 0) { setSdCalYear(y => y - 1); setSdCalMonth(11); } else setSdCalMonth(m => m - 1); }}
+              className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm"
+            >← Prev</button>
+            <span className="text-sm font-semibold text-nct-navy">
+              {SD_MONTH_NAMES[sdCalMonth]} {sdCalYear}
+              {" — "}
+              {SD_MONTH_NAMES[sdCalMonth === 11 ? 0 : sdCalMonth + 1]} {sdCalMonth === 11 ? sdCalYear + 1 : sdCalYear}
+            </span>
+            <button
+              onClick={() => { if (sdCalMonth === 11) { setSdCalYear(y => y + 1); setSdCalMonth(0); } else setSdCalMonth(m => m + 1); }}
+              className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm"
+            >Next →</button>
+          </div>
+
+          {/* ── Two-month calendar grid ── */}
+          {!loading && (() => {
+            const today2 = new Date().toISOString().split("T")[0];
+            const sdMonth2 = sdCalMonth === 11 ? 0 : sdCalMonth + 1;
+            const sdYear2  = sdCalMonth === 11 ? sdCalYear + 1 : sdCalYear;
+            const dayLookup = Object.fromEntries((shoppingDays || []).map(d => [d.shopping_date, d]));
+            return (
+              <div>
+                <div className="grid md:grid-cols-2 gap-4 mb-3">
+                  {[[sdCalYear, sdCalMonth], [sdYear2, sdMonth2]].map(([mYear, mMonth], offset) => {
+                    const weeks = buildSdGrid(mYear, mMonth);
+                    return (
+                      <div key={offset} className="bg-white border border-gray-200 rounded-xl p-4">
+                        <h3 className="text-center font-bold text-nct-navy text-sm mb-2">{SD_MONTH_NAMES[mMonth]} {mYear}</h3>
+                        <div className="grid grid-cols-7">
+                          {SD_DAY_LABELS.map(d => (
+                            <div key={d} className="text-center text-xs text-gray-400 pb-1.5 font-medium">{d}</div>
+                          ))}
+                          {weeks.flat().map((day, i) => {
+                            if (!day) return <div key={i} className="h-9" />;
+                            const dateStr = sdDateStr(mYear, mMonth, day);
+                            const dayData = dayLookup[dateStr];
+                            const isToday = dateStr === today2;
+                            const isSelected = dateStr === selectedShoppingDate;
+                            const isSun = new Date(dateStr + "T12:00:00").getDay() === 0;
+                            const totalBooked = dayData
+                              ? (dayData.slots?.wholesale?.booked || 0) + (dayData.slots?.bins?.booked || 0) + (dayData.slots?.nonprofit_bins?.booked || 0)
+                              : 0;
+                            let dotColor = "";
+                            if (dayData?.status === "closed") dotColor = isSelected ? "bg-white/60" : "bg-gray-300";
+                            else if (dayData && isSun) dotColor = isSelected ? "bg-white" : "bg-purple-500";
+                            else if (dayData) dotColor = isSelected ? "bg-white" : "bg-nct-navy";
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => setSelectedShoppingDate(isSelected ? null : dateStr)}
+                                className={`h-9 flex flex-col items-center justify-center rounded-lg text-xs transition-colors
+                                  ${isSelected ? "bg-nct-navy text-white" : isToday ? "ring-2 ring-nct-gold" : "hover:bg-gray-100"}
+                                  ${!isSelected && isSun && dayData ? "text-purple-700 font-semibold" : ""}
+                                  ${!dayData ? "text-gray-300 cursor-default" : "cursor-pointer"}
+                                `}
+                              >
+                                <span className="leading-none">{day}</span>
+                                {dotColor && <span className={`w-1.5 h-1.5 rounded-full mt-0.5 ${dotColor}`} />}
+                                {totalBooked > 0 && !isSelected && <span className="text-[9px] leading-none text-nct-gold font-bold">{totalBooked}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-5 text-xs text-gray-400 mb-5">
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-nct-navy inline-block" /> Open weekday</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> Sunday sale</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-300 inline-block" /> Closed</span>
+                  <span className="flex items-center gap-1.5"><span className="text-nct-gold font-bold">3</span> = total bookings</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Day detail ── */}
           {loading ? <p className="text-gray-500 text-sm">Loading…</p>
-           : shoppingDays.length === 0 ? <p className="text-gray-500 text-sm">No shopping days found.</p>
-           : (
+           : !selectedShoppingDate ? (
+            <p className="text-sm text-gray-400 text-center py-6">
+              {shoppingDays.length === 0
+                ? "No shopping days found. Use the buttons above to generate or create days."
+                : "Click a highlighted date to view booking details."}
+            </p>
+           ) : !shoppingDays.find(d => d.shopping_date === selectedShoppingDate) ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
+              <p className="text-gray-500 text-sm mb-3">
+                No shopping day on {new Date(selectedShoppingDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}.
+              </p>
+              <button
+                onClick={() => { setNewShoppingDay(p => ({ ...p, shopping_date: selectedShoppingDate })); setShowNewShoppingDay(true); setSelectedShoppingDate(null); }}
+                className="text-sm text-nct-gold hover:underline font-medium"
+              >+ Create shopping day for this date →</button>
+            </div>
+           ) : (
             <div className="space-y-5">
-              {shoppingDays.map((day) => {
+              {shoppingDays.filter(d => d.shopping_date === selectedShoppingDate).map((day) => {
                 const dateStr = new Date(day.shopping_date + "T12:00:00").toLocaleDateString("en-US", {
                   weekday: "long", month: "long", day: "numeric", year: "numeric",
                 });
