@@ -12,7 +12,7 @@ export default function Footer() {
           </p>
           <div className="flex gap-4 mt-4">
             <a
-              href="https://www.instagram.com/nct_emporium"
+              href="https://www.instagram.com/nctemporium"
               target="_blank"
               rel="noopener noreferrer"
               className="text-gray-300 hover:text-nct-gold text-sm transition-colors"
@@ -20,7 +20,7 @@ export default function Footer() {
               Instagram
             </a>
             <a
-              href="https://www.facebook.com/nct_emporium"
+              href="https://www.facebook.com/nctrecycling"
               target="_blank"
               rel="noopener noreferrer"
               className="text-gray-300 hover:text-nct-gold text-sm transition-colors"

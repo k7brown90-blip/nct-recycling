@@ -39,8 +39,8 @@ const localBusinessSchema = {
     },
   ],
   sameAs: [
-    "https://www.instagram.com/nct_emporium",
-    "https://www.facebook.com/nct_emporium",
+    "https://www.instagram.com/nctemporium",
+    "https://www.facebook.com/nctrecycling",
   ],
 };
 

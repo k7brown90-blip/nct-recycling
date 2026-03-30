@@ -83,23 +83,23 @@ export default function ContactPage() {
               <li>
                 <span className="font-medium text-nct-navy">Instagram: </span>
                 <a
-                  href="https://www.instagram.com/nct_emporium"
+                  href="https://www.instagram.com/nctemporium"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-nct-gold transition-colors"
                 >
-                  @nct_emporium
+                  @nctemporium
                 </a>
               </li>
               <li>
                 <span className="font-medium text-nct-navy">Facebook: </span>
                 <a
-                  href="https://www.facebook.com/nct_emporium"
+                  href="https://www.facebook.com/nctrecycling"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-nct-gold transition-colors"
                 >
-                  @nct_emporium
+                  @nctrecycling
                 </a>
               </li>
             </ul>
