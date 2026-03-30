@@ -36,12 +36,13 @@ export default function Footer() {
           <ul className="space-y-2 text-sm text-gray-300">
             <li><Link href="/shop" className="hover:text-nct-gold transition-colors">Shop / How to Buy</Link></li>
             <li><Link href="/donate" className="hover:text-nct-gold transition-colors">Donate Clothing</Link></li>
-            <li><Link href="/nonprofit-partners" className="hover:text-nct-gold transition-colors">Co-op Partners</Link></li>
-            <li><Link href="/retail-partners" className="hover:text-nct-gold transition-colors">Retail Partners</Link></li>
-            <li><Link href="/community-partners" className="hover:text-nct-gold transition-colors">Our Partners</Link></li>
-            <li><Link href="/wholesale" className="hover:text-nct-gold transition-colors">Wholesale Buyers</Link></li>
+            <li><Link href="/partners" className="hover:text-nct-gold transition-colors">Partner Network</Link></li>
+            <li><Link href="/partners#nonprofit" className="hover:text-nct-gold transition-colors">Nonprofit Co-op</Link></li>
+            <li><Link href="/partners#retail" className="hover:text-nct-gold transition-colors">Retail Partners</Link></li>
+            <li><Link href="/partners#wholesale" className="hover:text-nct-gold transition-colors">Wholesale Buyers</Link></li>
             <li><Link href="/contact" className="hover:text-nct-gold transition-colors">Contact Us</Link></li>
-            <li><Link href="/apply" className="hover:text-nct-gold transition-colors">Partner Application</Link></li>
+            <li><Link href="/nonprofit-apply" className="hover:text-nct-gold transition-colors">Co-op Application</Link></li>
+            <li><Link href="/apply" className="hover:text-nct-gold transition-colors">Retail Application</Link></li>
           </ul>
         </div>
 
