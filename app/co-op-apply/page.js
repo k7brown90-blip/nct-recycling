@@ -61,6 +61,7 @@ export default function NonprofitApplyPage() {
     e.preventDefault();
     if (!form.contract_agreed) { setError("You must agree to the co-op participation agreement."); return; }
     if (!form.contract_signed_name.trim()) { setError("Please type your full legal name as your signature."); return; }
+    if (!form.authorized_title.trim()) { setError("Please enter your title or authority (e.g. Executive Director)."); return; }
 
     setSubmitting(true);
     setError("");
@@ -78,16 +79,21 @@ export default function NonprofitApplyPage() {
 
     try {
       const res = await fetch("/api/nonprofit-apply", { method: "POST", body: data });
-      const json = await res.json();
+      let json;
+      try { json = await res.json(); } catch { json = {}; }
       if (!res.ok) {
-        setError(json.error || "Submission failed. Please try again.");
+        if (res.status === 409) {
+          setError("An application with this email already exists. If you already applied, check your inbox for a confirmation email or contact donate@nctrecycling.com.");
+        } else {
+          setError(json.error || "Submission failed. Please try again or email donate@nctrecycling.com.");
+        }
         setSubmitting(false);
         return;
       }
       setStep(3);
       window.scrollTo(0, 0);
     } catch {
-      setError("Network error. Please check your connection and try again.");
+      setError("Unable to reach the server. Please check your connection and try again. If the problem persists, email donate@nctrecycling.com.");
       setSubmitting(false);
     }
   }

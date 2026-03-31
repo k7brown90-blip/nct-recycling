@@ -88,23 +88,19 @@ export async function POST(request) {
       return NextResponse.json({ error: "Failed to submit application." }, { status: 500 });
     }
 
-    // Generate and store signed agreement PDF
-    try {
-      const pdfBytes = await generateAgreementPDF({
-        org_name, contact_name, authorized_title,
-        contract_signed_name, contract_agreed_at,
-        ein, email, application_id: data.id,
-      });
-      await supabase.storage
+    // Generate and store signed agreement PDF — fire and forget, never block the response
+    generateAgreementPDF({
+      org_name, contact_name, authorized_title,
+      contract_signed_name, contract_agreed_at,
+      ein, email, application_id: data.id,
+    }).then((pdfBytes) =>
+      supabase.storage
         .from("nonprofit-docs")
         .upload(`agreements/${data.id}.pdf`, pdfBytes, {
           contentType: "application/pdf",
           upsert: true,
-        });
-    } catch (pdfErr) {
-      console.error("PDF generation error:", pdfErr);
-      // Don't block submission if PDF fails
-    }
+        })
+    ).catch((pdfErr) => console.error("PDF generation/upload error:", pdfErr));
 
     // Notify NCT Recycling
     resend.emails.send({
