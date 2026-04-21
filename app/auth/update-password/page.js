@@ -4,10 +4,46 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import Link from "next/link";
 
+async function resolveRecoverySession(supabase) {
+  const code = new URLSearchParams(window.location.search).get("code");
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      throw error;
+    }
+    if (data?.session) {
+      return data.session;
+    }
+  }
+
+  const hash = window.location.hash;
+  if (hash && hash.length > 1) {
+    const params = new URLSearchParams(hash.substring(1));
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
+
+    if (access_token && refresh_token) {
+      const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
+      if (error) {
+        throw error;
+      }
+      if (data?.session) {
+        return data.session;
+      }
+    }
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session || null;
+}
+
 function UpdatePasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isWelcome = searchParams.get("welcome") === "true";
+  const [supabase] = useState(() => createClient());
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -19,7 +55,6 @@ function UpdatePasswordForm() {
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-    const supabase = createClient();
     let settled = false;
 
     setSessionReady(false);
@@ -58,43 +93,13 @@ function UpdatePasswordForm() {
 
     async function init() {
       try {
-        // 1. PKCE flow: code in query params (?code=xxx)
-        const code = new URLSearchParams(window.location.search).get("code");
-        if (code) {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            console.error("exchangeCodeForSession error:", error.message);
-            markFailed("We couldn't verify this link. It may have expired, already been used, or your browser may have blocked the secure sign-in handoff.");
-            return;
-          }
-          if (data?.session) { markReady(); return; }
-        }
-
-        // 2. Implicit flow: tokens in URL hash (#access_token=xxx&refresh_token=xxx)
-        const hash = window.location.hash;
-        if (hash && hash.length > 1) {
-          const params = new URLSearchParams(hash.substring(1));
-          const access_token = params.get("access_token");
-          const refresh_token = params.get("refresh_token");
-
-          if (access_token && refresh_token) {
-            const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
-            if (error) {
-              console.error("setSession error:", error.message);
-              markFailed("We couldn't verify this link. It may have expired, already been used, or your browser may have blocked the secure sign-in handoff.");
-              return;
-            }
-            if (data?.session) { markReady(); return; }
-          }
-        }
-
-        // 3. Session may already exist (e.g. page refresh)
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await resolveRecoverySession(supabase);
         if (session) { markReady(); return; }
 
         // 4. Nothing worked — timeout will trigger the error state
       } catch (err) {
         console.error("Auth init exception:", err);
+        markFailed("We couldn't verify this link. It may have expired, already been used, or your browser may have blocked the secure sign-in handoff.");
       }
     }
 
@@ -110,7 +115,7 @@ function UpdatePasswordForm() {
       subscription.unsubscribe();
       clearTimeout(timeout);
     };
-  }, [retryCount]);
+  }, [retryCount, supabase]);
 
   function handleRetryVerification() {
     setRetryCount((count) => count + 1);
@@ -130,7 +135,13 @@ function UpdatePasswordForm() {
     }
 
     setLoading(true);
-    const supabase = createClient();
+    const session = await resolveRecoverySession(supabase).catch(() => null);
+    if (!session) {
+      setError("Failed to verify your reset session. Please reopen the invite link and try again.");
+      setLoading(false);
+      return;
+    }
+
     const { error } = await supabase.auth.updateUser({ password });
 
     if (error) {
