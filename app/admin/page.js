@@ -13,7 +13,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
+const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -172,6 +172,10 @@ export default function AdminPage() {
     end_time: "17:00",
     notes: "",
   });
+  const [timeReviewEntries, setTimeReviewEntries] = useState([]);
+  const [timeReviewFilter, setTimeReviewFilter] = useState("pending");
+  const [timeReviewLoading, setTimeReviewLoading] = useState(false);
+  const [timeReviewSavingId, setTimeReviewSavingId] = useState(null);
 
   // Applications state
   const [applications, setApplications] = useState([]);
@@ -331,6 +335,18 @@ export default function AdminPage() {
     }
     setWorkCalendarLoading(false);
   }, [secret, workCalendarYear, workCalendarMonth]);
+
+  const fetchTimeReviewEntries = useCallback(async () => {
+    setTimeReviewLoading(true);
+    const res = await fetch(`/api/admin/employee-time-entries?status=${encodeURIComponent(timeReviewFilter)}`, { headers: authHeader });
+    const json = await res.json();
+    if (res.ok) {
+      setTimeReviewEntries(json.entries || []);
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+    setTimeReviewLoading(false);
+  }, [secret, timeReviewFilter]);
 
   const fetchApplications = useCallback(async () => {
     setLoading(true);
@@ -528,6 +544,7 @@ export default function AdminPage() {
     if (section === "Dashboard") fetchDashboard();
     if (section === "Employees") fetchEmployees();
     if (section === "Work Calendar") { fetchEmployees(); fetchWorkCalendar(); }
+    if (section === "Time Review") fetchTimeReviewEntries();
     if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
@@ -536,7 +553,7 @@ export default function AdminPage() {
     if (section === "Donation Lots") fetchLots();
     if (section === "Discard Accounts") fetchDiscardAccounts();
     if (section === "Emails") fetchEmailUsers();
-  }, [authed, section, fetchDashboard, fetchEmployees, fetchWorkCalendar, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
+  }, [authed, section, fetchDashboard, fetchEmployees, fetchWorkCalendar, fetchTimeReviewEntries, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
 
   useEffect(() => {
     setSelectedWorkDate(getWorkCalendarDateString(workCalendarYear, workCalendarMonth, 1));
@@ -750,6 +767,28 @@ export default function AdminPage() {
     }
 
     setWorkCalendarDeletingId(null);
+  }
+
+  async function handleReviewTimeEntry(entryId, decision) {
+    if (!entryId) return;
+    setTimeReviewSavingId(entryId);
+    setMessage("");
+
+    const res = await fetch("/api/admin/employee-time-entries", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ entry_id: entryId, decision }),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      setMessage(`✅ Manual time entry ${decision}.`);
+      fetchTimeReviewEntries();
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+
+    setTimeReviewSavingId(null);
   }
 
   function changeWorkCalendarMonth(direction) {
@@ -1759,6 +1798,86 @@ export default function AdminPage() {
               )}
             </div>
           </section>
+        </div>
+      )}
+
+      {section === "Time Review" && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-nct-navy">Manual Time Review</h2>
+              <p className="text-sm text-gray-500 mt-1">Approve or reject missed-clock submissions from employees.</p>
+            </div>
+            <button onClick={fetchTimeReviewEntries} className="px-3 py-1.5 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
+          </div>
+
+          <div className="flex gap-2 mb-5">
+            {[
+              { value: "pending", label: "Pending" },
+              { value: "approved", label: "Approved" },
+              { value: "rejected", label: "Rejected" },
+              { value: "all", label: "All" },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setTimeReviewFilter(option.value)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${timeReviewFilter === option.value ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          {timeReviewLoading ? (
+            <p className="text-sm text-gray-500">Loading manual time entries...</p>
+          ) : timeReviewEntries.length === 0 ? (
+            <p className="text-sm text-gray-500">No manual time entries found for this filter.</p>
+          ) : (
+            <div className="space-y-3">
+              {timeReviewEntries.map((entry) => (
+                <div key={entry.id} className="rounded-xl border border-gray-200 p-4 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-semibold text-nct-navy">{entry.employee_display_name}</p>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${entry.approval_status === "approved" ? "bg-green-100 text-green-700" : entry.approval_status === "rejected" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-800"}`}>
+                        {entry.approval_status}
+                      </span>
+                    </div>
+                    {entry.employee_job_title && <p className="text-sm text-gray-500">{entry.employee_job_title}</p>}
+                    <p className="text-sm text-gray-700 mt-2">{formatShiftTimeRange(entry.started_at, entry.ended_at)}</p>
+                    <p className="text-sm text-gray-600 mt-1">{entry.minutes_worked} minutes · manual</p>
+                    <p className="text-sm text-gray-600 mt-2">{entry.notes}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 min-w-[140px]">
+                    <p className="text-xs text-gray-400">Submitted {formatAdminDateTime(entry.created_at)}</p>
+                    {entry.approval_status === "pending" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleReviewTimeEntry(entry.id, "approved")}
+                          disabled={timeReviewSavingId === entry.id}
+                          className="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 rounded-lg disabled:opacity-50"
+                        >
+                          {timeReviewSavingId === entry.id ? "Saving..." : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReviewTimeEntry(entry.id, "rejected")}
+                          disabled={timeReviewSavingId === entry.id}
+                          className="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 rounded-lg disabled:opacity-50"
+                        >
+                          {timeReviewSavingId === entry.id ? "Saving..." : "Reject"}
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-500">Reviewed {entry.approved_at ? formatAdminDateTime(entry.approved_at) : "previously"}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

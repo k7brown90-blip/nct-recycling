@@ -45,6 +45,13 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState(null);
   const [selectedShiftId, setSelectedShiftId] = useState(initialSnapshot.clockableShifts?.[0]?.id || "");
+  const [manualEntrySaving, setManualEntrySaving] = useState(false);
+  const [manualEntryForm, setManualEntryForm] = useState({
+    work_date: new Date().toISOString().slice(0, 10),
+    start_time: "09:00",
+    end_time: "17:00",
+    notes: "",
+  });
 
   const clockStatus = getClockStatus(employeeState, state.activeTimeEntry, state.openBreak);
 
@@ -95,6 +102,38 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
             : "Clock out recorded."
     );
     setBusyAction(null);
+  }
+
+  async function submitManualEntry(e) {
+    e.preventDefault();
+    setManualEntrySaving(true);
+    setError("");
+    setMessage("");
+
+    const res = await fetch("/api/employee/manual-time", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(manualEntryForm),
+    });
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(json.error || "Manual time entry failed.");
+      setManualEntrySaving(false);
+      return;
+    }
+
+    setEmployeeState(json.employee || employeeState);
+    setState({
+      activeTimeEntry: json.activeTimeEntry || null,
+      openBreak: json.openBreak || null,
+      clockableShifts: json.clockableShifts || [],
+      upcomingShifts: json.upcomingShifts || [],
+      recentEntries: json.recentEntries || [],
+    });
+    setManualEntryForm((current) => ({ ...current, notes: "" }));
+    setMessage("Manual time entry submitted for admin review.");
+    setManualEntrySaving(false);
   }
 
   return (
@@ -247,7 +286,50 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
         initialCalendarShifts={initialCalendarShifts}
       />
 
-      <div className="grid gap-6">
+      <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+        <section className="bg-white border border-gray-200 rounded-2xl p-6">
+          <h2 className="text-xl font-bold text-nct-navy mb-3">Manual Time Entry</h2>
+          <p className="text-sm text-gray-500 mb-4">Submit a missed shift or correction for admin approval.</p>
+          <form onSubmit={submitManualEntry} className="grid gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="date"
+                value={manualEntryForm.work_date}
+                onChange={(e) => setManualEntryForm((current) => ({ ...current, work_date: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="time"
+                  value={manualEntryForm.start_time}
+                  onChange={(e) => setManualEntryForm((current) => ({ ...current, start_time: e.target.value }))}
+                  className="border border-gray-300 rounded-lg px-4 py-2"
+                />
+                <input
+                  type="time"
+                  value={manualEntryForm.end_time}
+                  onChange={(e) => setManualEntryForm((current) => ({ ...current, end_time: e.target.value }))}
+                  className="border border-gray-300 rounded-lg px-4 py-2"
+                />
+              </div>
+            </div>
+            <textarea
+              value={manualEntryForm.notes}
+              onChange={(e) => setManualEntryForm((current) => ({ ...current, notes: e.target.value }))}
+              placeholder="Explain why this manual entry is needed"
+              rows={4}
+              className="border border-gray-300 rounded-lg px-4 py-2"
+            />
+            <button
+              type="submit"
+              disabled={manualEntrySaving}
+              className="bg-nct-navy hover:opacity-90 text-white font-bold py-3 rounded-xl transition-opacity disabled:opacity-50"
+            >
+              {manualEntrySaving ? "Submitting..." : "Submit For Approval"}
+            </button>
+          </form>
+        </section>
+
         <section className="bg-white border border-gray-200 rounded-2xl p-6">
           <h2 className="text-xl font-bold text-nct-navy mb-3">Recent Time Entries</h2>
           {state.recentEntries.length === 0 ? (
@@ -265,6 +347,7 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
                   <div className="text-right">
                     <p className="font-semibold text-nct-navy">{formatMinutes(entry.minutes_worked)}</p>
                     <p className="text-xs text-gray-500 mt-1">{entry.approval_status}</p>
+                    <p className="text-xs text-gray-400 mt-1">{entry.entry_source}</p>
                   </div>
                 </div>
               ))}
