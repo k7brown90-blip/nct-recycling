@@ -64,6 +64,23 @@ function formatClockEventLabel(value) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function formatShiftTimeRange(start, end) {
+  const startTime = new Date(start).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const endTime = new Date(end).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const dateLabel = new Date(start).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return `${dateLabel} · ${startTime} - ${endTime}`;
+}
+
 function mapLegacyCoOpStatus(status) {
   if (status === "approved") return "active";
   if (status === "denied") return "denied";
@@ -130,6 +147,10 @@ export default function AdminPage() {
   const [employees, setEmployees] = useState([]);
   const [employeeSaving, setEmployeeSaving] = useState(false);
   const [employeeInviteResendingId, setEmployeeInviteResendingId] = useState(null);
+  const [employeeShiftSavingId, setEmployeeShiftSavingId] = useState(null);
+  const [employeeShiftLoadingId, setEmployeeShiftLoadingId] = useState(null);
+  const [employeeShiftDeletingId, setEmployeeShiftDeletingId] = useState(null);
+  const [employeeShiftForm, setEmployeeShiftForm] = useState({});
   const [employeeForm, setEmployeeForm] = useState({
     email: "",
     display_name: "",
@@ -287,6 +308,23 @@ export default function AdminPage() {
     const json = await res.json();
     setEmployees(json.employees || []);
     setLoading(false);
+  }, [secret]);
+
+  const fetchEmployeeShifts = useCallback(async (employeeId) => {
+    if (!employeeId) return;
+    setEmployeeShiftLoadingId(employeeId);
+    const res = await fetch(`/api/admin/employee-shifts?employee_id=${encodeURIComponent(employeeId)}`, { headers: authHeader });
+    const json = await res.json();
+    if (res.ok) {
+      setEmployees((current) => current.map((employee) => (
+        employee.id === employeeId
+          ? { ...employee, upcoming_shifts: json.shifts || [] }
+          : employee
+      )));
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+    setEmployeeShiftLoadingId(null);
   }, [secret]);
 
   const fetchApplications = useCallback(async () => {
@@ -648,6 +686,76 @@ export default function AdminPage() {
     }
 
     setEmployeeInviteResendingId(null);
+  }
+
+  function toggleEmployeeScheduler(employeeId) {
+    setEmployeeForm((prev) => prev);
+    setEmployeeShiftForm((current) => {
+      if (current[employeeId]) {
+        const next = { ...current };
+        delete next[employeeId];
+        return next;
+      }
+
+      return {
+        ...current,
+        [employeeId]: {
+          shift_date: new Date().toISOString().slice(0, 10),
+          start_time: "09:00",
+          end_time: "17:00",
+          role_label: "",
+          location_label: "",
+          notes: "",
+        },
+      };
+    });
+    fetchEmployeeShifts(employeeId);
+  }
+
+  async function handleCreateEmployeeShift(employee) {
+    const form = employeeShiftForm[employee.id];
+    if (!employee?.id || !form) return;
+
+    setEmployeeShiftSavingId(employee.id);
+    setMessage("");
+
+    const res = await fetch("/api/admin/employee-shifts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ employee_id: employee.id, ...form }),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      setMessage(`✅ Shift scheduled for ${employee.display_name}.`);
+      await fetchEmployeeShifts(employee.id);
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+
+    setEmployeeShiftSavingId(null);
+  }
+
+  async function handleCancelEmployeeShift(employeeId, shiftId) {
+    if (!shiftId) return;
+    setEmployeeShiftDeletingId(shiftId);
+    setMessage("");
+
+    const res = await fetch("/api/admin/employee-shifts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ shift_id: shiftId }),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      setMessage("✅ Shift cancelled.");
+      await fetchEmployeeShifts(employeeId);
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+
+    setEmployeeShiftDeletingId(null);
   }
 
   async function handleAction(status) {
@@ -1467,6 +1575,13 @@ export default function AdminPage() {
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${employee.employment_status === "active" ? "bg-green-100 text-green-700" : employee.employment_status === "pending_setup" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"}`}>
                           {employee.employment_status}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleEmployeeScheduler(employee.id)}
+                          className="text-xs font-semibold text-nct-navy hover:text-nct-gold underline"
+                        >
+                          {employeeShiftForm[employee.id] ? "Hide Shift Scheduler" : "Schedule Shift"}
+                        </button>
                         {employee.work_email && (
                           <button
                             type="button"
@@ -1495,6 +1610,116 @@ export default function AdminPage() {
                         {formatAdminDateTime(employee.last_clock_event_at)}
                       </p>
                     </div>
+                    {employeeShiftForm[employee.id] && (
+                      <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <input
+                            type="date"
+                            value={employeeShiftForm[employee.id]?.shift_date || ""}
+                            onChange={(e) => setEmployeeShiftForm((current) => ({
+                              ...current,
+                              [employee.id]: { ...current[employee.id], shift_date: e.target.value },
+                            }))}
+                            className="border border-gray-300 rounded-lg px-3 py-2"
+                          />
+                          <input
+                            type="text"
+                            value={employeeShiftForm[employee.id]?.role_label || ""}
+                            onChange={(e) => setEmployeeShiftForm((current) => ({
+                              ...current,
+                              [employee.id]: { ...current[employee.id], role_label: e.target.value },
+                            }))}
+                            placeholder="Role label"
+                            className="border border-gray-300 rounded-lg px-3 py-2"
+                          />
+                          <input
+                            type="time"
+                            value={employeeShiftForm[employee.id]?.start_time || ""}
+                            onChange={(e) => setEmployeeShiftForm((current) => ({
+                              ...current,
+                              [employee.id]: { ...current[employee.id], start_time: e.target.value },
+                            }))}
+                            className="border border-gray-300 rounded-lg px-3 py-2"
+                          />
+                          <input
+                            type="time"
+                            value={employeeShiftForm[employee.id]?.end_time || ""}
+                            onChange={(e) => setEmployeeShiftForm((current) => ({
+                              ...current,
+                              [employee.id]: { ...current[employee.id], end_time: e.target.value },
+                            }))}
+                            className="border border-gray-300 rounded-lg px-3 py-2"
+                          />
+                          <input
+                            type="text"
+                            value={employeeShiftForm[employee.id]?.location_label || ""}
+                            onChange={(e) => setEmployeeShiftForm((current) => ({
+                              ...current,
+                              [employee.id]: { ...current[employee.id], location_label: e.target.value },
+                            }))}
+                            placeholder="Location"
+                            className="border border-gray-300 rounded-lg px-3 py-2"
+                          />
+                          <input
+                            type="text"
+                            value={employeeShiftForm[employee.id]?.notes || ""}
+                            onChange={(e) => setEmployeeShiftForm((current) => ({
+                              ...current,
+                              [employee.id]: { ...current[employee.id], notes: e.target.value },
+                            }))}
+                            placeholder="Shift notes"
+                            className="border border-gray-300 rounded-lg px-3 py-2"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCreateEmployeeShift(employee)}
+                          disabled={employeeShiftSavingId === employee.id}
+                          className="bg-nct-navy text-white font-bold py-2.5 px-4 rounded-lg hover:bg-nct-navy-dark transition-colors disabled:opacity-50"
+                        >
+                          {employeeShiftSavingId === employee.id ? "Scheduling shift..." : "Assign Shift"}
+                        </button>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-semibold text-nct-navy">Upcoming Assigned Shifts</p>
+                            <button
+                              type="button"
+                              onClick={() => fetchEmployeeShifts(employee.id)}
+                              className="text-xs text-gray-500 underline"
+                            >
+                              Refresh shifts
+                            </button>
+                          </div>
+                          {employeeShiftLoadingId === employee.id ? (
+                            <p className="text-sm text-gray-500">Loading shifts...</p>
+                          ) : !employee.upcoming_shifts || employee.upcoming_shifts.length === 0 ? (
+                            <p className="text-sm text-gray-500">No upcoming shifts scheduled yet.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {employee.upcoming_shifts.map((shift) => (
+                                <div key={shift.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 p-3">
+                                  <div>
+                                    <p className="text-sm font-semibold text-nct-navy">{shift.role_label || employee.job_title || "Scheduled Shift"}</p>
+                                    <p className="text-sm text-gray-600 mt-0.5">{formatShiftTimeRange(shift.scheduled_start, shift.scheduled_end)}</p>
+                                    <p className="text-xs text-gray-500 mt-1">{shift.location_label || employee.primary_location || "NCT Recycling"}</p>
+                                    {shift.notes && <p className="text-xs text-gray-500 mt-1">{shift.notes}</p>}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelEmployeeShift(employee.id, shift.id)}
+                                    disabled={employeeShiftDeletingId === shift.id}
+                                    className="text-xs font-semibold text-red-700 underline disabled:opacity-50"
+                                  >
+                                    {employeeShiftDeletingId === shift.id ? "Cancelling..." : "Cancel"}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
