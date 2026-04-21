@@ -180,6 +180,7 @@ export default function AdminPage() {
   });
   const [workCalendarTimeOffForm, setWorkCalendarTimeOffForm] = useState({
     employee_id: "",
+    starts_on: new Date().toISOString().slice(0, 10),
     ends_on: new Date().toISOString().slice(0, 10),
     reason: "",
     admin_notes: "",
@@ -573,7 +574,15 @@ export default function AdminPage() {
   }, [workCalendarYear, workCalendarMonth]);
 
   useEffect(() => {
-    setWorkCalendarTimeOffForm((current) => ({ ...current, ends_on: selectedWorkDate }));
+    setWorkCalendarTimeOffForm((current) => {
+      const nextStart = selectedWorkDate;
+      const nextEnd = current.ends_on < nextStart ? nextStart : current.ends_on;
+      return {
+        ...current,
+        starts_on: nextStart,
+        ends_on: nextEnd,
+      };
+    });
   }, [selectedWorkDate]);
 
   useEffect(() => {
@@ -765,8 +774,8 @@ export default function AdminPage() {
   }
 
   async function handleCreateTimeOffBlock() {
-    if (!selectedWorkDate || !workCalendarTimeOffForm.employee_id) {
-      setMessage("Error: Choose a date and employee before saving time off.");
+    if (!workCalendarTimeOffForm.starts_on || !workCalendarTimeOffForm.ends_on || !workCalendarTimeOffForm.employee_id) {
+      setMessage("Error: Choose a start date, end date, and employee before saving time off.");
       return;
     }
 
@@ -778,7 +787,7 @@ export default function AdminPage() {
       body: JSON.stringify({
         entry_type: "time_off",
         employee_id: workCalendarTimeOffForm.employee_id,
-        shift_date: selectedWorkDate,
+        shift_date: workCalendarTimeOffForm.starts_on,
         ends_on: workCalendarTimeOffForm.ends_on,
         reason: workCalendarTimeOffForm.reason,
         admin_notes: workCalendarTimeOffForm.admin_notes,
@@ -1858,12 +1867,34 @@ export default function AdminPage() {
                   <option key={employee.id} value={employee.id}>{employee.display_name}</option>
                 ))}
               </select>
-              <input
-                type="date"
-                value={workCalendarTimeOffForm.ends_on}
-                onChange={(e) => setWorkCalendarTimeOffForm((current) => ({ ...current, ends_on: e.target.value }))}
-                className="border border-gray-300 rounded-lg px-4 py-2"
-              />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1">
+                  <label className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">From</label>
+                  <input
+                    type="date"
+                    value={workCalendarTimeOffForm.starts_on}
+                    onChange={(e) => setWorkCalendarTimeOffForm((current) => {
+                      const nextStart = e.target.value;
+                      return {
+                        ...current,
+                        starts_on: nextStart,
+                        ends_on: current.ends_on < nextStart ? nextStart : current.ends_on,
+                      };
+                    })}
+                    className="border border-gray-300 rounded-lg px-4 py-2"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">To</label>
+                  <input
+                    type="date"
+                    min={workCalendarTimeOffForm.starts_on}
+                    value={workCalendarTimeOffForm.ends_on}
+                    onChange={(e) => setWorkCalendarTimeOffForm((current) => ({ ...current, ends_on: e.target.value }))}
+                    className="border border-gray-300 rounded-lg px-4 py-2"
+                  />
+                </div>
+              </div>
               <input
                 type="text"
                 value={workCalendarTimeOffForm.reason}
