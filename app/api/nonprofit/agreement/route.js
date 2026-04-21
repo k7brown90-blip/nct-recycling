@@ -1,4 +1,6 @@
 import { createServiceClient } from "@/lib/supabase";
+import { createSignedStorageUrl, findSignedAgreementDocumentForLegacySource } from "@/lib/agreement-documents";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -22,14 +24,21 @@ export async function GET(request) {
   if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
-  const { data: profile } = await db.from("profiles").select("application_id, role").eq("id", user.id).single();
+  const profile = await getOrCreateProfile(user, db);
   if (!profile || profile.role !== "nonprofit") return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
-  const { data: signedUrl, error } = await db.storage
-    .from("nonprofit-docs")
-    .createSignedUrl(`agreements/${profile.application_id}.pdf`, 300); // 5 min
+  const legacyUrl = await createSignedStorageUrl(db, "nonprofit-docs", `agreements/${profile.application_id}.pdf`, 300);
+  if (legacyUrl) {
+    return NextResponse.json({ url: legacyUrl });
+  }
 
-  if (error || !signedUrl) return NextResponse.json({ error: "Agreement not found." }, { status: 404 });
+  const canonicalDocument = await findSignedAgreementDocumentForLegacySource(db, "nonprofit_applications", profile.application_id);
+  if (canonicalDocument?.storage_bucket && canonicalDocument?.storage_path) {
+    const canonicalUrl = await createSignedStorageUrl(db, canonicalDocument.storage_bucket, canonicalDocument.storage_path, 300);
+    if (canonicalUrl) {
+      return NextResponse.json({ url: canonicalUrl });
+    }
+  }
 
-  return NextResponse.json({ url: signedUrl.signedUrl });
+  return NextResponse.json({ error: "Agreement not found." }, { status: 404 });
 }

@@ -63,7 +63,7 @@ export async function GET(request) {
       events.push({ date: dateStr, type: "sunday_bins", label: "Sunday Bin Sale · 12PM–4PM · $2/lb · Open to Everyone" });
     } else if (dow >= 1 && dow <= 4) {
       // Mon–Thu: boutique always open
-      const boutique = { date: dateStr, type: "boutique", label: "Boutique · 12PM–8PM" };
+      const boutique = { date: dateStr, type: "boutique", label: "Boutique · 12PM–6PM" };
       events.push(boutique);
       // Check if there's a shopping day (route-triggered bins)
       const sd = shoppingDays?.find((s) => s.shopping_date === dateStr);
@@ -71,7 +71,7 @@ export async function GET(request) {
         if (dow >= 2) {
           // Tue–Thu: reseller bins + public bins
           events.push({ date: dateStr, type: "bins_reseller", label: "Reseller Bins · 12PM–4PM (portal required)" });
-          events.push({ date: dateStr, type: "bins_public", label: "Public Bins · 4PM–8PM" });
+          events.push({ date: dateStr, type: "bins_public", label: "Public Bins · 4PM–6PM" });
         }
       }
     }

@@ -3,7 +3,7 @@ import Link from "next/link";
 export const metadata = {
   title: "Shop — Boutique, Bins & Wholesale",
   description:
-    "Three ways to shop at NCT Emporium in Fort Collins: curated thrift boutique (Mon–Thu 12–8PM), $2/lb pound bins (Tue–Thu + Sunday), and bulk raw weight bags for wholesale buyers.",
+    "Three ways to shop at NCT Emporium in Fort Collins: curated thrift boutique (Mon–Thu 12–6PM), $2/lb pound bins (Tue–Thu + Sunday), and bulk raw weight bags for wholesale buyers.",
 };
 
 export default function ShopPage() {
@@ -21,14 +21,14 @@ export default function ShopPage() {
         <div className="grid sm:grid-cols-2 gap-6 text-sm">
           <div>
             <p className="text-nct-gold font-bold mb-2 uppercase tracking-wide text-xs">Boutique (Open to Everyone)</p>
-            <p className="text-gray-200">Monday–Thursday &nbsp;|&nbsp; 12PM–8PM</p>
+            <p className="text-gray-200">Monday–Thursday &nbsp;|&nbsp; 12PM–6PM</p>
             <p className="text-gray-400 text-xs mt-1">Monday = boutique only (no bins)</p>
           </div>
           <div>
             <p className="text-nct-gold font-bold mb-2 uppercase tracking-wide text-xs">Pound Bins — $2.00/lb</p>
             <p className="text-gray-200">Tuesday–Thursday &nbsp;|&nbsp; 12PM–4PM</p>
             <p className="text-gray-400 text-xs mt-0.5">Reseller access (portal scheduling required)</p>
-            <p className="text-gray-200 mt-1">Tuesday–Thursday &nbsp;|&nbsp; 4PM–8PM</p>
+            <p className="text-gray-200 mt-1">Tuesday–Thursday &nbsp;|&nbsp; 4PM–6PM</p>
             <p className="text-gray-400 text-xs mt-0.5">Open to the public</p>
           </div>
           <div>
@@ -77,7 +77,7 @@ export default function ShopPage() {
           <div className="bg-gray-50 rounded-xl p-6">
             <h3 className="font-bold text-nct-navy mb-3">Boutique Details</h3>
             <ul className="space-y-3 text-sm text-gray-700">
-              <li className="flex gap-3"><span className="text-nct-gold font-bold">Hours</span> Monday–Thursday, 12PM–8PM</li>
+              <li className="flex gap-3"><span className="text-nct-gold font-bold">Hours</span> Monday–Thursday, 12PM–6PM</li>
               <li className="flex gap-3"><span className="text-nct-gold font-bold">Note</span> Monday is boutique only — no bins available</li>
               <li className="flex gap-3"><span className="text-nct-gold font-bold">Pricing</span> Individual retail thrift prices per item</li>
               <li className="flex gap-3"><span className="text-nct-gold font-bold">Payment</span> Cash and card accepted</li>
@@ -117,7 +117,7 @@ export default function ShopPage() {
             <ul className="space-y-3 text-sm text-gray-700">
               <li className="flex gap-3"><span className="text-nct-gold font-bold">Price</span> $2.00 per pound</li>
               <li className="flex gap-3"><span className="text-nct-gold font-bold">Reseller Hours</span> Tue–Thu, 12PM–4PM (portal required)</li>
-              <li className="flex gap-3"><span className="text-nct-gold font-bold">Public Hours</span> Tue–Thu, 4PM–8PM &amp; Sunday 12PM–4PM</li>
+              <li className="flex gap-3"><span className="text-nct-gold font-bold">Public Hours</span> Tue–Thu, 4PM–6PM &amp; Sunday 12PM–4PM</li>
               <li className="flex gap-3"><span className="text-nct-gold font-bold">Payment</span> Cash and card accepted</li>
               <li className="flex gap-3"><span className="text-nct-gold font-bold">Who</span> Thrifters, resellers, eBay/Poshmark sellers</li>
             </ul>
@@ -177,7 +177,7 @@ export default function ShopPage() {
       <div className="text-center bg-gray-50 rounded-xl p-10">
         <h2 className="text-2xl font-bold text-nct-navy mb-4">Ready to Visit?</h2>
         <p className="text-gray-600 mb-6">
-          Boutique open Monday–Thursday 12–8PM. Bins open Tuesday–Thursday (resellers 12–4PM, public 4–8PM) and Sunday 12–4PM.
+          Boutique open Monday–Thursday 12–6PM. Bins open Tuesday–Thursday (resellers 12–4PM, public 4–6PM) and Sunday 12–4PM.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link

@@ -1,7 +1,7 @@
 export const metadata = {
   title: "Contact & Hours — Fort Collins, CO",
   description:
-    "Visit NCT Emporium at 6108 South College Ave STE C, Fort Collins CO. Boutique Mon–Thu 12–8PM. Bins Tue–Thu + Sunday. 24/7 donation drop-off. Call (970) 232-9108.",
+    "Visit NCT Emporium at 6108 South College Ave STE C, Fort Collins CO. Boutique Mon–Thu 12–6PM. Bins Tue–Thu + Sunday. 24/7 donation drop-off. Call (970) 232-9108.",
 };
 
 export default function ContactPage() {
@@ -39,7 +39,7 @@ export default function ContactPage() {
               <tbody>
                 <tr className="border-b border-gray-100">
                   <td className="py-2 font-medium text-nct-navy w-1/2">Boutique</td>
-                  <td className="py-2">Monday–Thursday, 12PM–8PM<br /><span className="text-xs text-gray-500">Monday = boutique only (no bins)</span></td>
+                  <td className="py-2">Monday–Thursday, 12PM–6PM<br /><span className="text-xs text-gray-500">Monday = boutique only (no bins)</span></td>
                 </tr>
                 <tr className="border-b border-gray-100">
                   <td className="py-2 font-medium text-nct-navy">Bins — Resellers</td>
@@ -47,7 +47,7 @@ export default function ContactPage() {
                 </tr>
                 <tr className="border-b border-gray-100">
                   <td className="py-2 font-medium text-nct-navy">Bins — Public</td>
-                  <td className="py-2">Tuesday–Thursday, 4PM–8PM</td>
+                  <td className="py-2">Tuesday–Thursday, 4PM–6PM</td>
                 </tr>
                 <tr className="border-b border-gray-100">
                   <td className="py-2 font-medium text-nct-navy">Sunday Bin Sale</td>

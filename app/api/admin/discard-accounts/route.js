@@ -1,4 +1,7 @@
 import { createServiceClient } from "@/lib/supabase";
+import { findSignedAgreementDocumentForLegacySource } from "@/lib/agreement-documents";
+import { syncDiscardAccountToCanonical } from "@/lib/discard-canonical";
+import { getCanonicalProgramSnapshot } from "@/lib/organization-status";
 import { NextResponse } from "next/server";
 
 function checkAuth(request) {
@@ -16,7 +19,28 @@ export async function GET(request) {
     .order("org_name");
 
   if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
-  return NextResponse.json({ accounts: data || [] });
+
+  const accounts = await Promise.all(
+    (data || []).map(async (account) => {
+      try {
+        const [canonicalProgram, canonicalAgreement] = await Promise.all([
+          getCanonicalProgramSnapshot(db, "discard_accounts", account.id),
+          findSignedAgreementDocumentForLegacySource(db, "discard_accounts", account.id),
+        ]);
+
+        return {
+          ...account,
+          canonical_program: canonicalProgram,
+          canonical_agreement_available: Boolean(canonicalAgreement?.storage_path),
+        };
+      } catch (canonicalError) {
+        console.error("Canonical discard admin enrichment error:", canonicalError);
+        return account;
+      }
+    })
+  );
+
+  return NextResponse.json({ accounts });
 }
 
 // POST — create a new discard account
@@ -50,10 +74,15 @@ export async function POST(request) {
       notes:              body.notes              || null,
       status:             "active",
     })
-    .select("id")
+    .select("*")
     .single();
 
   if (error) return NextResponse.json({ error: "Failed to create account." }, { status: 500 });
+  try {
+    await syncDiscardAccountToCanonical(db, data);
+  } catch (canonicalError) {
+    console.error("Canonical discard account create sync error:", canonicalError);
+  }
   return NextResponse.json({ success: true, id: data.id });
 }
 
@@ -80,6 +109,21 @@ export async function PATCH(request) {
   const db = createServiceClient();
   const { error } = await db.from("discard_accounts").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+
+  try {
+    const { data: account, error: accountError } = await db
+      .from("discard_accounts")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (!accountError && account) {
+      await syncDiscardAccountToCanonical(db, account);
+    }
+  } catch (canonicalError) {
+    console.error("Canonical discard account update sync error:", canonicalError);
+  }
+
   return NextResponse.json({ success: true });
 }
 

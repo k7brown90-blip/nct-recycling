@@ -19,7 +19,7 @@ function Field({ label, name, value, onChange, type = "text", placeholder = "", 
   );
 }
 
-export default function AccountSettingsForm({ role, appData, email }) {
+export default function AccountSettingsForm({ role, appData, program, email }) {
   // Profile fields — prefill from existing application data
   const [profile, setProfile] = useState({
     // Nonprofit
@@ -33,6 +33,10 @@ export default function AccountSettingsForm({ role, appData, email }) {
     address_zip:           appData?.address_zip           || "",
     available_pickup_hours: appData?.available_pickup_hours || "",
     dock_instructions:     appData?.dock_instructions     || "",
+    // Discard
+    org_name:              program?.legalName             || appData?.org_name || "",
+    contact_email:         appData?.contact_email         || email || "",
+    contact_phone:         appData?.contact_phone         || "",
     // Reseller
     full_name:             appData?.full_name             || "",
     business_name:         appData?.business_name         || "",
@@ -70,6 +74,17 @@ export default function AccountSettingsForm({ role, appData, email }) {
           available_pickup_hours: profile.available_pickup_hours,
           dock_instructions: profile.dock_instructions,
         }
+      : role === "discard"
+        ? {
+            org_name: profile.org_name,
+            contact_name: profile.contact_name,
+            contact_email: profile.contact_email,
+            contact_phone: profile.contact_phone,
+            address_street: profile.address_street,
+            address_city: profile.address_city,
+            address_state: profile.address_state,
+            address_zip: profile.address_zip,
+          }
       : {
           full_name: profile.full_name,
           business_name: profile.business_name,
@@ -110,6 +125,7 @@ export default function AccountSettingsForm({ role, appData, email }) {
   }
 
   const isNonprofit = role === "nonprofit";
+  const isDiscard = role === "discard";
 
   return (
     <div className="space-y-6">
@@ -186,6 +202,36 @@ export default function AccountSettingsForm({ role, appData, email }) {
                     onChange={handleChange}
                     placeholder="e.g. Ring bell at east entrance, loading dock behind building"
                   />
+                </div>
+              </div>
+            </>
+          ) : isDiscard ? (
+            <>
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Organization</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="Organization Name" name="org_name" value={profile.org_name} onChange={handleChange} placeholder="Partner Organization" />
+                  <Field label="Contact Name" name="contact_name" value={profile.contact_name} onChange={handleChange} placeholder="Jane Smith" />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Contact Info</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="Contact Email" name="contact_email" value={profile.contact_email} onChange={handleChange} type="email" placeholder="partner@example.com" />
+                  <Field label="Phone" name="contact_phone" value={profile.contact_phone} onChange={handleChange} type="tel" placeholder="(970) 555-0100" />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Pickup Address</p>
+                <div className="space-y-3">
+                  <Field label="Street Address" name="address_street" value={profile.address_street} onChange={handleChange} placeholder="123 Main St" />
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <Field label="City" name="address_city" value={profile.address_city} onChange={handleChange} placeholder="Fort Collins" />
+                    <Field label="State" name="address_state" value={profile.address_state} onChange={handleChange} placeholder="CO" />
+                    <Field label="ZIP" name="address_zip" value={profile.address_zip} onChange={handleChange} placeholder="80525" />
+                  </div>
                 </div>
               </div>
             </>

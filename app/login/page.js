@@ -33,9 +33,9 @@ export default function LoginPage() {
     <main className="min-h-[70vh] flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-nct-navy mb-2">Partner Login</h1>
+          <h1 className="text-3xl font-bold text-nct-navy mb-2">Portal Login</h1>
           <p className="text-gray-600 text-sm">
-            Sign in to your NCT Recycling partner account.
+            Sign in to your NCT Recycling account.
           </p>
         </div>
 

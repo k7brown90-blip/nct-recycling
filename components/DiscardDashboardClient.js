@@ -1,15 +1,21 @@
 "use client";
 import { useState } from "react";
+import AgreementDownloadButton from "@/components/AgreementDownloadButton";
+import { getProgramStatusPresentation } from "@/lib/organization-status";
 import SignOutButton from "@/components/SignOutButton";
 import DiscardPickupRequestForm from "@/components/DiscardPickupRequestForm";
 import DiscardBagCountForm from "@/components/DiscardBagCountForm";
 
-export default function DiscardDashboardClient({ account, user, pickups }) {
+export default function DiscardDashboardClient({ account, program, user, pickups }) {
   const [section, setSection] = useState(null); // null | "pickup" | "payments" | "load"
 
   const firstName = account?.contact_name?.split(" ")[0] || "Partner";
   const pending = (pickups || []).filter((p) => p.payment_status === "pending");
   const outstanding = pending.reduce((s, p) => s + parseFloat(p.amount_owed || 0), 0);
+  const status = getProgramStatusPresentation(program?.lifecycleStatus || account?.status || "active");
+  const accountType = program?.accountType || account?.account_type;
+  const orgName = program?.legalName || account?.org_name;
+  const agreementSignedAt = program?.agreementSignedAt || account?.contract_date;
 
   function SectionHeader({ title }) {
     return (
@@ -106,20 +112,20 @@ export default function DiscardDashboardClient({ account, user, pickups }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-nct-navy">Welcome, {firstName}</h1>
-          <p className="text-gray-500 text-sm mt-1">{account?.org_name} · {user.email}</p>
+          <p className="text-gray-500 text-sm mt-1">{orgName} · {user.email}</p>
         </div>
         <SignOutButton />
       </div>
 
       {/* Status row */}
       <div className="grid grid-cols-3 gap-3 mb-8">
-        <div className="bg-green-50 border border-green-300 rounded-xl p-4">
-          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">Status</p>
-          <p className="text-lg font-bold text-green-800">Active</p>
+        <div className={`${status.cardClass} border rounded-xl p-4`}>
+          <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${status.eyebrowClass}`}>Status</p>
+          <p className={`text-lg font-bold ${status.textClass}`}>{status.label}</p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Account</p>
-          <p className="text-sm font-bold text-nct-navy">{account?.account_type === "fl" ? "Full Load" : "LTL"}</p>
+          <p className="text-sm font-bold text-nct-navy">{accountType === "fl" ? "Full Load" : "LTL"}</p>
         </div>
         <div className={`rounded-xl p-4 border ${outstanding > 0 ? "bg-yellow-50 border-yellow-300" : "bg-gray-50 border-gray-200"}`}>
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Balance Owed</p>
@@ -143,7 +149,7 @@ export default function DiscardDashboardClient({ account, user, pickups }) {
           <span className="ml-auto text-gray-400 group-hover:text-white text-xl">›</span>
         </button>
 
-        {account?.account_type !== "fl" && (
+        {accountType !== "fl" && (
           <button
             onClick={() => setSection("load")}
             className="w-full flex items-center gap-4 bg-white border-2 border-gray-200 rounded-2xl p-5 hover:border-nct-navy group transition-colors text-left"
@@ -174,6 +180,23 @@ export default function DiscardDashboardClient({ account, user, pickups }) {
           </div>
           <span className="ml-auto text-gray-400 text-xl">›</span>
         </button>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+        <h3 className="font-bold mb-3 text-nct-navy">Agreement on File</h3>
+        <dl className="grid grid-cols-2 gap-3 text-sm mb-3">
+          <div>
+            <dt className="text-gray-500">Program</dt>
+            <dd className="font-medium">Discard Purchase Agreement</dd>
+          </div>
+          <div>
+            <dt className="text-gray-500">Contract Date</dt>
+            <dd className="font-medium">
+              {agreementSignedAt ? new Date(agreementSignedAt).toLocaleDateString() : "—"}
+            </dd>
+          </div>
+        </dl>
+        <AgreementDownloadButton endpoint="/api/discard/agreement" />
       </div>
 
       {/* Contact */}

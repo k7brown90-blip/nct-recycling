@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { getCanonicalDiscardRequests, updateCanonicalDiscardPickupRequest } from "@/lib/discard-canonical";
 import { NextResponse } from "next/server";
 
 function checkAuth(request) {
@@ -14,6 +15,15 @@ export async function GET(request) {
   if (!account_id) return NextResponse.json({ error: "Missing account_id." }, { status: 400 });
 
   const db = createServiceClient();
+  try {
+    const canonical = await getCanonicalDiscardRequests(db, account_id);
+    if (canonical !== null) {
+      return NextResponse.json({ requests: canonical || [] });
+    }
+  } catch (canonicalError) {
+    console.error("Canonical admin discard requests load error:", canonicalError);
+  }
+
   const { data, error } = await db
     .from("discard_pickup_requests")
     .select("*")
@@ -21,6 +31,7 @@ export async function GET(request) {
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
+
   return NextResponse.json({ requests: data || [] });
 }
 
@@ -44,5 +55,12 @@ export async function PATCH(request) {
   const db = createServiceClient();
   const { error } = await db.from("discard_pickup_requests").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+
+  try {
+    await updateCanonicalDiscardPickupRequest(db, id, updates);
+  } catch (canonicalError) {
+    console.error("Canonical discard request update error:", canonicalError);
+  }
+
   return NextResponse.json({ success: true });
 }

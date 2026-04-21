@@ -51,7 +51,7 @@ export async function POST(request) {
       );
     }
 
-    // Upload DR 0563 if provided
+    // Upload DR 5003 if provided. Legacy field and bucket names stay in place for compatibility.
     let dr0563_file_url = null;
     if (dr0563_file && dr0563_file.size > 0) {
       const ext = dr0563_file.name.split(".").pop();
@@ -61,7 +61,7 @@ export async function POST(request) {
         .upload(fileName, dr0563_file, { contentType: dr0563_file.type });
 
       if (uploadError) {
-        console.error("DR 0563 upload error:", uploadError);
+        console.error("DR 5003 upload error:", uploadError);
         // Don't block the application — admin can follow up
       } else {
         dr0563_file_url = fileName;
@@ -118,7 +118,7 @@ export async function POST(request) {
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Expected Spend</td><td style="padding:6px 12px">${expected_spend || "—"}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Categories</td><td style="padding:6px 12px">${categories?.join(", ") || "—"}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Tax License #</td><td style="padding:6px 12px">${tax_license_number || "—"}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">DR 0563</td><td style="padding:6px 12px">${dr0563_file_url ? "✅ Uploaded" : "Not provided"}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">DR 5003</td><td style="padding:6px 12px">${dr0563_file_url ? "✅ Uploaded" : "Not provided"}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f5f5f5">Signed As</td><td style="padding:6px 12px">${contract_signed_name}</td></tr>
         </table>
         <p style="margin-top:20px">

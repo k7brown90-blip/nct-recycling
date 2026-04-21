@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { addCanonicalCoOpBagCount, getCanonicalCoOpBagLevels } from "@/lib/co-op-canonical";
 import { NextResponse } from "next/server";
 
 function checkAdminAuth(request) {
@@ -70,6 +71,28 @@ export async function GET(request) {
     };
   });
 
+  try {
+    const canonicalLevels = await getCanonicalCoOpBagLevels(db, ids);
+    if (canonicalLevels) {
+      return NextResponse.json({
+        nonprofits: result.map((nonprofit) => {
+          if (!canonicalLevels.has(nonprofit.id)) return nonprofit;
+
+          const canonical = canonicalLevels.get(nonprofit.id) || {};
+          return {
+            ...nonprofit,
+            bag_count: canonical.bag_count ?? nonprofit.bag_count ?? null,
+            bag_count_updated: canonical.bag_count_updated || nonprofit.bag_count_updated || null,
+            bag_count_is_admin: canonical.bag_count_is_admin ?? nonprofit.bag_count_is_admin ?? false,
+            pending_request: canonical.pending_request ?? null,
+          };
+        }),
+      });
+    }
+  } catch (canonicalError) {
+    console.error("Canonical co-op bag levels load error:", canonicalError);
+  }
+
   return NextResponse.json({ nonprofits: result });
 }
 
@@ -100,6 +123,12 @@ export async function PATCH(request) {
   if (error) {
     console.error("Admin bag count override error:", error);
     return NextResponse.json({ error: "Failed to save." }, { status: 500 });
+  }
+
+  try {
+    await addCanonicalCoOpBagCount(db, nonprofit_id, count, `Admin override - ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`, "adjustment");
+  } catch (canonicalError) {
+    console.error("Canonical co-op admin override sync error:", canonicalError);
   }
 
   return NextResponse.json({ success: true });

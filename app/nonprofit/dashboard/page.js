@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase-server";
+import { getCanonicalCoOpRecentPickups } from "@/lib/co-op-canonical";
+import { getCanonicalProgramSnapshot } from "@/lib/organization-status";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { redirect } from "next/navigation";
 import NonprofitDashboardClient from "@/components/NonprofitDashboardClient";
 
@@ -11,19 +14,16 @@ export default async function NonprofitDashboard() {
   if (!user) redirect("/login");
 
   const db = createServiceClient();
-
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, application_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
 
   if (profile?.role !== "nonprofit") redirect("/dashboard");
 
   const [
     { data: app },
     { data: appointments },
-    { data: recentPickups },
+    { data: legacyRecentPickups },
+    canonicalProgram,
+    canonicalRecentPickups,
   ] = await Promise.all([
     db.from("nonprofit_applications").select("*").eq("id", profile.application_id).maybeSingle(),
     db.from("exchange_appointments").select("*").eq("nonprofit_id", profile.application_id).order("created_at", { ascending: false }),
@@ -33,7 +33,13 @@ export default async function NonprofitDashboard() {
       .eq("stop_status", "completed")
       .order("completed_at", { ascending: false })
       .limit(5),
+    getCanonicalProgramSnapshot(db, "nonprofit_applications", profile.application_id),
+    getCanonicalCoOpRecentPickups(db, profile.application_id, 5),
   ]);
+
+  const recentPickups = (canonicalRecentPickups && canonicalRecentPickups.length)
+    ? canonicalRecentPickups
+    : (legacyRecentPickups || []);
 
   const pendingAppt = appointments?.find((a) => a.status === "requested" || a.status === "scheduled");
 
@@ -41,6 +47,7 @@ export default async function NonprofitDashboard() {
     <main className="max-w-2xl mx-auto px-4 py-10">
       <NonprofitDashboardClient
         app={app}
+        program={canonicalProgram}
         user={{ email: user.email }}
         appointments={appointments || []}
         pendingAppt={pendingAppt || null}

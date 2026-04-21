@@ -12,7 +12,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Dashboard", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts"];
+const SECTIONS = ["Dashboard", "Employees", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -31,6 +31,52 @@ function bagBarColor(count) {
   if (count >= TARGET_BAGS)   return "bg-red-500";
   if (count >= SCHEDULE_BAGS) return "bg-yellow-400";
   return "bg-green-500";
+}
+
+function formatProgramStatus(status) {
+  if (!status) return null;
+  return status.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatAccountTypeLabel(programType, accountType) {
+  if (!accountType) return null;
+  if (programType === "co_op") {
+    return accountType === "fl" ? "FL - Full Load" : "LTL - Less than Truckload";
+  }
+  if (programType === "discard") {
+    return accountType === "fl" ? "Full Load (FL)" : "LTL (Weight-Based)";
+  }
+  return accountType;
+}
+
+function mapLegacyCoOpStatus(status) {
+  if (status === "approved") return "active";
+  if (status === "denied") return "denied";
+  return "pending_review";
+}
+
+function getStatusPill(status, fallbackLabel) {
+  switch (status) {
+    case "active":
+      return { label: "Active", className: "bg-green-100 text-green-700" };
+    case "pending_review":
+      return { label: "Pending Review", className: "bg-yellow-100 text-yellow-800" };
+    case "pending_partner_finalization":
+      return { label: "Pending Finalization", className: "bg-yellow-100 text-yellow-800" };
+    case "invited":
+      return { label: "Invited", className: "bg-blue-100 text-blue-700" };
+    case "inactive":
+      return { label: "Inactive", className: "bg-gray-100 text-gray-500" };
+    case "terminated":
+      return { label: "Terminated", className: "bg-red-100 text-red-700" };
+    case "denied":
+      return { label: "Denied", className: "bg-red-100 text-red-800" };
+    default:
+      return {
+        label: fallbackLabel || formatProgramStatus(status) || "Unknown",
+        className: STATUS_COLORS[status] || "bg-gray-100 text-gray-600",
+      };
+  }
 }
 
 // Shopping-days calendar helpers
@@ -64,6 +110,21 @@ export default function AdminPage() {
   const [section, setSection] = useState("Dashboard");
   const [dashboard, setDashboard] = useState(null);
   const [message, setMessage] = useState("");
+
+  // Employee state
+  const [employees, setEmployees] = useState([]);
+  const [employeeSaving, setEmployeeSaving] = useState(false);
+  const [employeeForm, setEmployeeForm] = useState({
+    email: "",
+    display_name: "",
+    first_name: "",
+    last_name: "",
+    phone: "",
+    job_title: "",
+    department: "",
+    primary_location: "",
+    employment_type: "hourly",
+  });
 
   // Applications state
   const [applications, setApplications] = useState([]);
@@ -135,6 +196,7 @@ export default function AdminPage() {
   const [discardAccounts, setDiscardAccounts] = useState([]);
   const [discardLoading, setDiscardLoading] = useState(false);
   const [selectedDiscard, setSelectedDiscard] = useState(null);
+  const [pendingDiscardFocusId, setPendingDiscardFocusId] = useState(null);
   const [editingDiscard, setEditingDiscard] = useState(false);
   const [discardEdits, setDiscardEdits] = useState({});
   const [discardEditSaving, setDiscardEditSaving] = useState(false);
@@ -143,6 +205,8 @@ export default function AdminPage() {
   const [discardRequests, setDiscardRequests] = useState([]);
   const [discardRequestsLoading, setDiscardRequestsLoading] = useState(false);
   const [discardBagCount, setDiscardBagCount] = useState(null);
+  const [discardAgreementUploadingFor, setDiscardAgreementUploadingFor] = useState(null);
+  const [discardAgreementStatus, setDiscardAgreementStatus] = useState(null);
   const [invitingDiscard, setInvitingDiscard] = useState(false);
   const [showNewAccount, setShowNewAccount] = useState(false);
   const [newAccount, setNewAccount] = useState({
@@ -168,8 +232,31 @@ export default function AdminPage() {
   const [containerAdminNotes, setContainerAdminNotes] = useState("");
   const [containerScheduleDate, setContainerScheduleDate] = useState("");
 
+  // Email blast state
+  const [emailRecipientType, setEmailRecipientType] = useState("all");
+  const [emailIndividual, setEmailIndividual] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResult, setEmailResult] = useState(null);
+  const [emailUsers, setEmailUsers] = useState([]);
+  const [emailUsersLoading, setEmailUsersLoading] = useState(false);
+
   const isNonprofit = section === "Co-op Apps";
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
+  const applicationFilterOptions = isNonprofit
+    ? [
+        { value: "pending_review", label: "Pending Review" },
+        { value: "active", label: "Active" },
+        { value: "denied", label: "Denied" },
+        { value: "", label: "All" },
+      ]
+    : [
+        { value: "pending", label: "Pending" },
+        { value: "approved", label: "Approved" },
+        { value: "denied", label: "Denied" },
+        { value: "", label: "All" },
+      ];
 
   const authHeader = { Authorization: `Bearer ${secret}` };
 
@@ -178,14 +265,27 @@ export default function AdminPage() {
     if (res.ok) setDashboard(await res.json());
   }, [secret]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const fetchEmployees = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch("/api/admin/employees", { headers: authHeader });
+    const json = await res.json();
+    setEmployees(json.employees || []);
+    setLoading(false);
+  }, [secret]);
+
   const fetchApplications = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`${apiPath}?status=${filter}`, { headers: authHeader });
+    const params = new URLSearchParams();
+    if (filter) {
+      params.set(isNonprofit ? "lifecycle_status" : "status", filter);
+    }
+    const queryString = params.toString();
+    const res = await fetch(`${apiPath}${queryString ? `?${queryString}` : ""}`, { headers: authHeader });
     if (res.status === 401) { setAuthed(false); return; }
     const json = await res.json();
     setApplications(json.applications || []);
     setLoading(false);
-  }, [filter, secret, apiPath]);
+  }, [filter, secret, apiPath, isNonprofit]);
 
   const fetchBagLevels = useCallback(async () => {
     setLoading(true);
@@ -269,6 +369,14 @@ export default function AdminPage() {
     const json = await res.json();
     if (res.ok) setDiscardBagCount(json);
   }, [secret]);
+
+  const fetchEmailUsers = useCallback(async () => {
+    setEmailUsersLoading(true);
+    const res = await fetch("/api/admin/email", { headers: authHeader });
+    const json = await res.json();
+    setEmailUsers(json.users || []);
+    setEmailUsersLoading(false);
+  }, [secret]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchShoppingDays = useCallback(async () => {
     setLoading(true);
@@ -359,6 +467,7 @@ export default function AdminPage() {
     if (!authed) return;
     setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
     if (section === "Dashboard") fetchDashboard();
+    if (section === "Employees") fetchEmployees();
     if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
@@ -366,7 +475,8 @@ export default function AdminPage() {
     if (section === "Shopping Days") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
     if (section === "Discard Accounts") fetchDiscardAccounts();
-  }, [authed, section, fetchDashboard, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts]);
+    if (section === "Emails") fetchEmailUsers();
+  }, [authed, section, fetchDashboard, fetchEmployees, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
 
   useEffect(() => {
     setEditingDiscard(false);
@@ -384,6 +494,20 @@ export default function AdminPage() {
   }, [selectedDiscard?.id, fetchDiscardPickups, fetchDiscardRequests, fetchDiscardBagCount]);
 
   useEffect(() => {
+    if (section !== "Discard Accounts" || !pendingDiscardFocusId || discardAccounts.length === 0) return;
+
+    const target = discardAccounts.find((acct) => acct.id === pendingDiscardFocusId);
+    if (!target) return;
+
+    setSelectedDiscard(target);
+    setPendingDiscardFocusId(null);
+
+    requestAnimationFrame(() => {
+      document.getElementById(`discard-account-${target.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [section, pendingDiscardFocusId, discardAccounts]);
+
+  useEffect(() => {
     setDocsOpen(false);
     setEditingProfile(false);
     setProfileEdits({});
@@ -393,6 +517,17 @@ export default function AdminPage() {
       fetchNpLots(selected.id);
     }
   }, [selected?.id, isNonprofit, fetchNpLots]);
+
+  useEffect(() => {
+    if (section === "Co-op Apps") {
+      setFilter((current) => (["pending_review", "active", "denied", ""].includes(current) ? current : "pending_review"));
+      return;
+    }
+
+    if (section === "Reseller Apps") {
+      setFilter((current) => (["pending", "approved", "denied", ""].includes(current) ? current : "pending"));
+    }
+  }, [section]);
 
   // Auto-login when a saved secret is restored
   useEffect(() => {
@@ -446,6 +581,36 @@ export default function AdminPage() {
     if (!res.ok) setMessage(`Error: ${json.error}`);
     else { setMessage(`✅ Approved and invite sent to ${selected.email}`); setSelected(null); fetchApplications(); }
     setActionLoading(false);
+  }
+
+  async function handleCreateEmployee(e) {
+    e.preventDefault();
+    setEmployeeSaving(true);
+    setMessage("");
+    const res = await fetch("/api/admin/employees", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify(employeeForm),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setMessage(`✅ Employee invite sent to ${employeeForm.email}.`);
+      setEmployeeForm({
+        email: "",
+        display_name: "",
+        first_name: "",
+        last_name: "",
+        phone: "",
+        job_title: "",
+        department: "",
+        primary_location: "",
+        employment_type: "hourly",
+      });
+      fetchEmployees();
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+    setEmployeeSaving(false);
   }
 
   async function handleAction(status) {
@@ -675,6 +840,9 @@ export default function AdminPage() {
       setMessage("✅ Account created.");
       setShowNewAccount(false);
       setNewAccount({ org_name: "", address_street: "", address_city: "", address_state: "", address_zip: "", contact_name: "", contact_email: "", contact_phone: "", account_type: "ltl", pickup_frequency: "weekly", rate_per_1000_lbs: "20", flat_rate_per_pickup: "", min_lbs_weekly: "1000", min_lbs_biweekly: "2500", min_lbs_adhoc: "5000", projected_lbs_week: "", contract_date: "", notes: "" });
+      if (json.id) {
+        setPendingDiscardFocusId(json.id);
+      }
       fetchDiscardAccounts();
     } else { setMessage(`Error: ${json.error}`); }
     setNewAccountLoading(false);
@@ -685,6 +853,52 @@ export default function AdminPage() {
     const res = await fetch("/api/admin/discard-accounts", { method: "DELETE", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ id }) });
     if (res.ok) { setMessage("Account deleted."); setSelectedDiscard(null); fetchDiscardAccounts(); }
     else setMessage("Delete failed.");
+  }
+
+  function handleOpenDiscardAccount(accountId) {
+    if (!accountId) {
+      setSection("Discard Accounts");
+      return;
+    }
+
+    setPendingDiscardFocusId(accountId);
+    setSection("Discard Accounts");
+  }
+
+  async function handleViewDiscardAgreement(accountId) {
+    setDiscardAgreementStatus(null);
+    const res = await fetch(`/api/admin/discard-agreement?account_id=${accountId}`, { headers: authHeader });
+    const json = await res.json();
+    if (res.ok && json.url) {
+      window.open(json.url, "_blank");
+      return;
+    }
+    setDiscardAgreementStatus({ accountId, type: "error", message: json.error || "Agreement not available yet." });
+  }
+
+  async function handleUploadDiscardAgreement(accountId, file) {
+    if (!file) return;
+    setDiscardAgreementUploadingFor(accountId);
+    setDiscardAgreementStatus(null);
+
+    const formData = new FormData();
+    formData.append("account_id", accountId);
+    formData.append("agreement_file", file);
+
+    const res = await fetch("/api/admin/discard-agreement", {
+      method: "POST",
+      headers: authHeader,
+      body: formData,
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      setDiscardAgreementStatus({ accountId, type: "success", message: "Signed agreement uploaded." });
+    } else {
+      setDiscardAgreementStatus({ accountId, type: "error", message: json.error || "Upload failed." });
+    }
+
+    setDiscardAgreementUploadingFor(null);
   }
 
   async function handleInviteDiscardPartner(acct) {
@@ -1009,8 +1223,8 @@ export default function AdminPage() {
           ) : (
             <div className="space-y-4">
               {/* Action items */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <button onClick={() => { setSection("Co-op Apps"); setFilter("pending"); }}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button onClick={() => { setSection("Co-op Apps"); setFilter("pending_review"); }}
                   className={`rounded-xl p-4 text-left border-2 transition-colors ${dashboard.pending_nonprofits > 0 ? "bg-yellow-50 border-yellow-300 hover:bg-yellow-100" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
                   <p className={`text-3xl font-bold ${dashboard.pending_nonprofits > 0 ? "text-yellow-700" : "text-gray-400"}`}>{dashboard.pending_nonprofits}</p>
                   <p className="text-xs font-semibold text-gray-600 mt-1">Pending Co-op Apps</p>
@@ -1023,7 +1237,12 @@ export default function AdminPage() {
                 <button onClick={() => setSection("Bag Levels")}
                   className={`rounded-xl p-4 text-left border-2 transition-colors ${dashboard.pending_pickup_requests > 0 ? "bg-amber-50 border-amber-300 hover:bg-amber-100" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
                   <p className={`text-3xl font-bold ${dashboard.pending_pickup_requests > 0 ? "text-amber-700" : "text-gray-400"}`}>{dashboard.pending_pickup_requests}</p>
-                  <p className="text-xs font-semibold text-gray-600 mt-1">Pickup Requests</p>
+                  <p className="text-xs font-semibold text-gray-600 mt-1">Co-op Pickup Requests</p>
+                </button>
+                <button onClick={() => handleOpenDiscardAccount(dashboard.recent_discard_requests?.[0]?.discard_account_id)}
+                  className={`rounded-xl p-4 text-left border-2 transition-colors ${dashboard.pending_discard_requests > 0 ? "bg-blue-50 border-blue-300 hover:bg-blue-100" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
+                  <p className={`text-3xl font-bold ${dashboard.pending_discard_requests > 0 ? "text-blue-700" : "text-gray-400"}`}>{dashboard.pending_discard_requests}</p>
+                  <p className="text-xs font-semibold text-gray-600 mt-1">Discard Pickup Requests</p>
                 </button>
               </div>
               {/* Today's route */}
@@ -1063,8 +1282,165 @@ export default function AdminPage() {
                   <p className="text-gray-400 text-sm">No upcoming shopping days.</p>
                 )}
               </div>
+
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Recent Discard Requests</p>
+                  <button onClick={() => setSection("Discard Accounts")}
+                    className="text-xs text-nct-navy underline hover:text-nct-navy-dark">Open Discard Accounts →</button>
+                </div>
+                {!dashboard.recent_discard_requests || dashboard.recent_discard_requests.length === 0 ? (
+                  <p className="text-gray-400 text-sm">No discard pickup requests yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {dashboard.recent_discard_requests.map((req) => (
+                      <button
+                        key={req.id}
+                        type="button"
+                        onClick={() => handleOpenDiscardAccount(req.discard_account_id)}
+                        className="w-full flex items-center justify-between gap-3 border-b border-gray-100 pb-2 last:border-0 last:pb-0 text-left hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-nct-navy truncate">{req.discard_accounts?.org_name || "Discard partner"}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {req.preferred_date ? `Preferred ${new Date(req.preferred_date + "T00:00:00").toLocaleDateString()}` : "No preferred date"}
+                            {req.estimated_bags ? ` · ~${req.estimated_bags} bags` : req.estimated_weight_lbs ? ` · ~${req.estimated_weight_lbs} lbs` : ""}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${req.status === "pending" ? "bg-yellow-100 text-yellow-800" : req.status === "scheduled" ? "bg-blue-100 text-blue-800" : req.status === "completed" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
+                            {req.status}
+                          </span>
+                          <p className="text-[11px] text-gray-400 mt-1">{new Date(req.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
+        </div>
+      )}
+
+      {section === "Employees" && (
+        <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <section className="bg-white border border-gray-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-nct-navy">Provision Employee</h2>
+                <p className="text-sm text-gray-500 mt-1">Create an employee account, link it to Supabase auth, and send the setup email.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateEmployee} className="grid gap-3 md:grid-cols-2">
+              <input
+                type="email"
+                value={employeeForm.email}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="Work email"
+                className="border border-gray-300 rounded-lg px-4 py-2 md:col-span-2"
+                required
+              />
+              <input
+                value={employeeForm.display_name}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, display_name: e.target.value }))}
+                placeholder="Display name"
+                className="border border-gray-300 rounded-lg px-4 py-2 md:col-span-2"
+                required
+              />
+              <input
+                value={employeeForm.first_name}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, first_name: e.target.value }))}
+                placeholder="First name"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <input
+                value={employeeForm.last_name}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, last_name: e.target.value }))}
+                placeholder="Last name"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <input
+                value={employeeForm.job_title}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, job_title: e.target.value }))}
+                placeholder="Job title"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <input
+                value={employeeForm.department}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, department: e.target.value }))}
+                placeholder="Department"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <input
+                value={employeeForm.primary_location}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, primary_location: e.target.value }))}
+                placeholder="Primary location"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <select
+                value={employeeForm.employment_type}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, employment_type: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-4 py-2 bg-white"
+              >
+                <option value="hourly">Hourly</option>
+                <option value="salary">Salary</option>
+                <option value="contractor">Contractor</option>
+              </select>
+              <input
+                value={employeeForm.phone}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, phone: e.target.value }))}
+                placeholder="Phone"
+                className="border border-gray-300 rounded-lg px-4 py-2 md:col-span-2"
+              />
+              <button
+                type="submit"
+                disabled={employeeSaving}
+                className="md:col-span-2 bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {employeeSaving ? "Sending invite..." : "Create Employee Account"}
+              </button>
+            </form>
+          </section>
+
+          <section className="bg-white border border-gray-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-nct-navy">Employee Directory</h2>
+                <p className="text-sm text-gray-500 mt-1">Current workforce records linked to the labor portal.</p>
+              </div>
+              <button onClick={fetchEmployees} className="px-3 py-1.5 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
+            </div>
+
+            {loading ? (
+              <p className="text-sm text-gray-500">Loading employees...</p>
+            ) : employees.length === 0 ? (
+              <p className="text-sm text-gray-500">No employees provisioned yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {employees.map((employee) => (
+                  <div key={employee.id} className="border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-nct-navy">{employee.display_name}</p>
+                        <p className="text-sm text-gray-500 mt-0.5">{employee.work_email || "No email"}</p>
+                      </div>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${employee.employment_status === "active" ? "bg-green-100 text-green-700" : employee.employment_status === "pending_setup" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"}`}>
+                        {employee.employment_status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mt-3">
+                      <p>{employee.job_title || "No title assigned"}</p>
+                      <p>{employee.department || "No department"}</p>
+                      <p>{employee.primary_location || "No location"}</p>
+                      <p>{employee.employment_type || "hourly"}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       )}
 
@@ -1072,13 +1448,13 @@ export default function AdminPage() {
       {(section === "Reseller Apps" || section === "Co-op Apps") && (
         <>
           <div className="flex gap-2 mb-6">
-            {["pending", "approved", "denied", ""].map((s) => (
-              <button key={s} onClick={() => { setFilter(s); setSelected(null); }}
+            {applicationFilterOptions.map(({ value, label }) => (
+              <button key={value} onClick={() => { setFilter(value); setSelected(null); }}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                  filter === s ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  filter === value ? "bg-nct-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                {s === "" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                {label}
               </button>
             ))}
             <button onClick={fetchApplications} className="ml-auto px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
@@ -1090,6 +1466,11 @@ export default function AdminPage() {
             <div className="space-y-2">
               {applications.map((app) => {
                 const isExpanded = selected?.id === app.id;
+                const canonicalProgram = app.canonical_program;
+                const nonprofitAccountType = canonicalProgram?.accountType || app.account_type;
+                const nonprofitAgreementName = canonicalProgram?.agreementSignerName || app.contract_signed_name;
+                const nonprofitAgreementAt = canonicalProgram?.agreementSignedAt || app.contract_agreed_at;
+                const nonprofitStatus = getStatusPill(canonicalProgram?.lifecycleStatus || mapLegacyCoOpStatus(app.status), app.status);
                 return (
                   <div key={app.id} className={`border rounded-xl overflow-hidden transition-colors ${isExpanded ? "border-nct-navy" : "border-gray-200"}`}>
 
@@ -1115,8 +1496,8 @@ export default function AdminPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[app.status]}`}>
-                            {app.status}
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isNonprofit ? nonprofitStatus.className : STATUS_COLORS[app.status]}`}>
+                            {isNonprofit ? nonprofitStatus.label : app.status}
                           </span>
                           <span className="text-gray-400 text-xs">{isExpanded ? "▲" : "▼"}</span>
                         </div>
@@ -1137,14 +1518,17 @@ export default function AdminPage() {
                               ["Contact", app.contact_name], ["Title", app.contact_title],
                               ["Email", app.email || "—"], ["Phone", app.phone || "—"],
                               ["Org Type", app.org_type], ["EIN", app.ein],
+                              ["Portal Status", formatProgramStatus(canonicalProgram?.lifecycleStatus)],
+                              ["Account Type", formatAccountTypeLabel("co_op", nonprofitAccountType)],
+                              ["Program Started", canonicalProgram?.startedAt ? new Date(canonicalProgram.startedAt).toLocaleString() : null],
                               ["Website", app.website], ["Est. Monthly (lbs)", app.estimated_donation_lbs],
                               ["Categories", app.categories_needed?.join(", ")],
                               ["Address", [app.address_street, app.address_city, app.address_state, app.address_zip].filter(Boolean).join(", ")],
                               ["Pickup Hours", app.available_pickup_hours],
                               ["Dock Instructions", app.dock_instructions],
                               ["Feature Consent", app.feature_consent ? "Yes" : "No"],
-                              ["Signed As", app.contract_signed_name],
-                              ["Agreed At", app.contract_agreed_at ? new Date(app.contract_agreed_at).toLocaleString() : null],
+                              ["Signed As", nonprofitAgreementName],
+                              ["Agreed At", nonprofitAgreementAt ? new Date(nonprofitAgreementAt).toLocaleString() : null],
                               ["Submitted", new Date(app.created_at).toLocaleString()],
                             ] : [
                               ["Business", app.business_name], ["Phone", app.phone],
@@ -1189,13 +1573,16 @@ export default function AdminPage() {
                                   <div className="flex items-center gap-3">
                                     <button onClick={() => viewAgreement(app.id)}
                                       className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
-                                      📄 Co-Op Participation Agreement (PDF) →
+                                      📄 {app.canonical_agreement_available ? "Signed Co-Op Participation Agreement" : "Co-Op Participation Agreement (PDF)"} →
                                     </button>
                                     <button onClick={() => regenerateAgreement(app.id)}
                                       className="text-xs text-gray-400 hover:text-nct-navy underline transition-colors">
                                       Regenerate
                                     </button>
                                   </div>
+                                  {app.canonical_agreement_available && (
+                                    <p className="text-xs text-green-600">Signed agreement is mirrored in the canonical document record.</p>
+                                  )}
                                   {npLots.filter((l) => l.receipt_status === "uploaded").map((lot) => (
                                     <button key={lot.id} onClick={() => viewReceiptAsAdmin(lot.id)}
                                       className="flex items-center gap-2 text-sm text-nct-navy hover:text-nct-gold transition-colors">
@@ -1970,6 +2357,7 @@ export default function AdminPage() {
               {routes.map((r) => {
                 const completedStops = r.stops?.filter((s) => s.stop_status === "completed").length || 0;
                 const totalStops = r.stops?.length || 0;
+                const noInventoryStops = r.stops?.filter((s) => s.no_inventory).length || 0;
                 const isActive = r.status === "scheduled" || r.status === "in_progress";
                 return (
                   <div key={r.id} className={`border rounded-xl p-4 ${r.status === "in_progress" ? "border-nct-gold bg-yellow-50" : "border-gray-200"}`}>
@@ -1985,6 +2373,20 @@ export default function AdminPage() {
                           {r.actual_total_bags ? ` · ${r.actual_total_bags} bags actual` : ""}
                           {isActive && totalStops > 0 && ` · ${completedStops}/${totalStops} complete`}
                         </p>
+                        {(r.completion_type || noInventoryStops > 0) && (
+                          <div className="mt-1 flex gap-2 flex-wrap">
+                            {r.completion_type && (
+                              <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${r.completion_type === "partial" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-700"}`}>
+                                {r.completion_type === "partial" ? "Partial Route" : "Full Route"}
+                              </span>
+                            )}
+                            {noInventoryStops > 0 && (
+                              <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600">
+                                {noInventoryStops} no-inventory stop{noInventoryStops !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[r.status]}`}>{r.status}</span>
                     </div>
@@ -2003,11 +2405,12 @@ export default function AdminPage() {
                                 <span className="text-sm font-medium text-gray-900 truncate">{s.nonprofit_applications?.org_name}</span>
                                 {isDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">✓ Done</span>}
                                 {isSkipped && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full shrink-0">Skipped</span>}
+                                {s.no_inventory && <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full shrink-0">No inventory</span>}
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
                                 <span className="text-xs text-gray-400">{s.estimated_bags ?? "—"} est</span>
                                 {isDone && s.actual_bags != null && (
-                                  <span className="text-xs font-semibold text-green-700">{s.actual_bags} actual</span>
+                                  <span className={`text-xs font-semibold ${s.no_inventory ? "text-gray-500" : "text-green-700"}`}>{s.actual_bags} actual</span>
                                 )}
                                 {!isDone && !isSkipped && isActive && (
                                   <button
@@ -2906,8 +3309,12 @@ export default function AdminPage() {
             <div className="space-y-2">
               {discardAccounts.map((acct) => {
                 const isExpanded = selectedDiscard?.id === acct.id;
+                const canonicalProgram = acct.canonical_program;
+                const discardAccountType = canonicalProgram?.accountType || acct.account_type;
+                const discardAgreementAt = canonicalProgram?.agreementSignedAt || acct.contract_date;
+                const discardStatus = getStatusPill(canonicalProgram?.lifecycleStatus || (acct.status === "inactive" ? "inactive" : "active"), acct.status);
                 return (
-                  <div key={acct.id} className={`border rounded-xl overflow-hidden transition-colors ${isExpanded ? "border-nct-navy" : "border-gray-200"}`}>
+                  <div id={`discard-account-${acct.id}`} key={acct.id} className={`border rounded-xl overflow-hidden transition-colors ${isExpanded ? "border-nct-navy" : "border-gray-200"}`}>
 
                     {/* Collapsed header */}
                     <button
@@ -2924,8 +3331,8 @@ export default function AdminPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${acct.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                            {acct.status}
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${discardStatus.className}`}>
+                            {discardStatus.label}
                           </span>
                           {acct.user_id && (
                             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">Portal</span>
@@ -3121,13 +3528,15 @@ export default function AdminPage() {
                               </button>
                             </form>
                           ) : (
-                            <dl className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
+                            <>
+                              <dl className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
                               {[
                                 ["Address", [acct.address_street, acct.address_city, acct.address_state, acct.address_zip].filter(Boolean).join(", ")],
                                 ["Contact", acct.contact_name],
                                 ["Email", acct.contact_email],
                                 ["Phone", acct.contact_phone],
-                                ["Type", acct.account_type === "fl" ? "Full Load (FL)" : "LTL (Weight-Based)"],
+                                ["Portal Status", formatProgramStatus(canonicalProgram?.lifecycleStatus)],
+                                ["Type", formatAccountTypeLabel("discard", discardAccountType)],
                                 ["Frequency", acct.pickup_frequency],
                                 ["Flat Rate", acct.flat_rate_per_pickup != null ? `$${parseFloat(acct.flat_rate_per_pickup).toFixed(2)} per pickup` : null],
                                 ["Rate", acct.flat_rate_per_pickup != null ? null : `$${acct.rate_per_1000_lbs} per 1,000 lbs`],
@@ -3135,6 +3544,9 @@ export default function AdminPage() {
                                 ["Min (biweekly)", acct.min_lbs_biweekly ? `${acct.min_lbs_biweekly.toLocaleString()} lbs` : null],
                                 ["Min (ad hoc)", acct.min_lbs_adhoc ? `${acct.min_lbs_adhoc.toLocaleString()} lbs` : null],
                                 ["Projected/wk", acct.projected_lbs_week ? `${acct.projected_lbs_week.toLocaleString()} lbs` : null],
+                                ["Program Started", canonicalProgram?.startedAt ? new Date(canonicalProgram.startedAt).toLocaleString() : null],
+                                ["Signed As", canonicalProgram?.agreementSignerName],
+                                ["Agreement Signed", discardAgreementAt ? new Date(discardAgreementAt).toLocaleString() : null],
                                 ["Contract Date", acct.contract_date ? new Date(acct.contract_date + "T00:00:00").toLocaleDateString() : null],
                                 ["Notes", acct.notes],
                               ].filter(([, v]) => v).map(([label, val]) => (
@@ -3143,7 +3555,45 @@ export default function AdminPage() {
                                   <dd className="font-medium break-all">{val}</dd>
                                 </div>
                               ))}
-                            </dl>
+                              </dl>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="px-5 py-4">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Agreement Documents</p>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleViewDiscardAgreement(acct.id)}
+                              className="text-xs font-semibold text-nct-navy hover:text-nct-gold underline transition-colors"
+                            >
+                              View Signed Agreement
+                            </button>
+                            <label className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline transition-colors cursor-pointer">
+                              {discardAgreementUploadingFor === acct.id ? "Uploading…" : "Upload / Replace Signed Agreement"}
+                              <input
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png"
+                                className="hidden"
+                                disabled={discardAgreementUploadingFor === acct.id}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  handleUploadDiscardAgreement(acct.id, file);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                          </div>
+                          <p className={`text-xs mt-2 ${acct.canonical_agreement_available ? "text-green-600" : "text-gray-400"}`}>
+                            {acct.canonical_agreement_available
+                              ? "Signed agreement is available in the canonical organization document record."
+                              : "No canonical signed agreement record yet. Uploading here will create it."}
+                          </p>
+                          {discardAgreementStatus?.accountId === acct.id && (
+                            <p className={`text-xs mt-2 ${discardAgreementStatus.type === "success" ? "text-green-600" : "text-red-600"}`}>
+                              {discardAgreementStatus.message}
+                            </p>
                           )}
                         </div>
 
@@ -3438,6 +3888,169 @@ export default function AdminPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Emails ── */}
+      {section === "Emails" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-nct-navy">Send Email Notification</h2>
+            <button onClick={fetchEmailUsers} disabled={emailUsersLoading}
+              className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">
+              {emailUsersLoading ? "Loading…" : "↻ Refresh"}
+            </button>
+          </div>
+
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            setEmailSending(true);
+            setEmailResult(null);
+            const body = {
+              recipient_type: emailRecipientType,
+              subject: emailSubject,
+              body: emailBody,
+            };
+            if (emailRecipientType === "individual") {
+              const [addr, ...rest] = emailIndividual.split("|");
+              body.to_email = addr.trim();
+              body.to_name = rest.join("|").trim();
+            }
+            const res = await fetch("/api/admin/email", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...authHeader },
+              body: JSON.stringify(body),
+            });
+            const json = await res.json();
+            if (res.ok) {
+              setEmailResult({ ok: true, sent: json.sent, failed: json.failed });
+              setEmailSubject("");
+              setEmailBody("");
+              setEmailIndividual("");
+            } else {
+              setEmailResult({ ok: false, error: json.error });
+            }
+            setEmailSending(false);
+          }} className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
+
+            {/* Recipient type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Send To</label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "all", label: `All Portal Users (${emailUsers.length})` },
+                  { value: "nonprofit", label: `Nonprofit Partners (${emailUsers.filter(u => u.role === "nonprofit").length})` },
+                  { value: "reseller", label: `Retail Partners (${emailUsers.filter(u => u.role === "reseller").length})` },
+                  { value: "individual", label: "Individual Email" },
+                ].map(({ value, label }) => (
+                  <button key={value} type="button"
+                    onClick={() => { setEmailRecipientType(value); setEmailResult(null); }}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                      emailRecipientType === value
+                        ? "bg-nct-navy text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Individual recipient input */}
+            {emailRecipientType === "individual" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Recipient Email</label>
+                <input
+                  type="email"
+                  value={emailIndividual}
+                  onChange={(e) => setEmailIndividual(e.target.value)}
+                  placeholder="partner@example.com"
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+
+            {/* Preview */}
+            {emailRecipientType !== "individual" && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
+                {emailUsersLoading ? "Loading recipients…" : (
+                  <>
+                    <span className="font-semibold">
+                      {emailRecipientType === "all" ? emailUsers.length
+                        : emailUsers.filter(u => u.role === emailRecipientType).length}
+                    </span>{" "}
+                    recipient{emailRecipientType === "all" ? (emailUsers.length !== 1 ? "s" : "") : (emailUsers.filter(u => u.role === emailRecipientType).length !== 1 ? "s" : "")} will receive this email.
+                    {emailUsers.length === 0 && " No approved users found yet — refresh to check."}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Subject */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+              <input
+                type="text"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="e.g. Important update from NCT Recycling"
+                required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+
+            {/* Body */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+              <textarea
+                rows={8}
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                placeholder="Write your message here. Use blank lines to separate paragraphs."
+                required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y"
+              />
+              <p className="text-xs text-gray-400 mt-1">Sent from noreply@nctrecycling.com · Plain text, paragraph breaks preserved.</p>
+            </div>
+
+            {/* Send button */}
+            <button type="submit" disabled={emailSending}
+              className="bg-nct-navy hover:bg-nct-navy-dark text-white font-semibold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors">
+              {emailSending ? "Sending…" : "Send Email"}
+            </button>
+
+            {/* Result */}
+            {emailResult && (
+              <div className={`rounded-lg px-4 py-3 text-sm font-medium ${emailResult.ok ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"}`}>
+                {emailResult.ok
+                  ? `✅ Sent to ${emailResult.sent} recipient${emailResult.sent !== 1 ? "s" : ""}${emailResult.failed > 0 ? ` (${emailResult.failed} failed — check server logs)` : ""}.`
+                  : `Error: ${emailResult.error}`}
+              </div>
+            )}
+          </form>
+
+          {/* User list */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Approved Portal Users</h3>
+            {emailUsersLoading ? (
+              <p className="text-sm text-gray-400">Loading…</p>
+            ) : emailUsers.length === 0 ? (
+              <p className="text-sm text-gray-400">No approved users found.</p>
+            ) : (
+              <div className="space-y-1">
+                {emailUsers.map((u, i) => (
+                  <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2 text-sm">
+                    <span className="text-gray-800 font-medium">{u.name}</span>
+                    <span className="text-gray-500">{u.email}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === "nonprofit" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+                      {u.role === "nonprofit" ? "Nonprofit" : "Retail"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

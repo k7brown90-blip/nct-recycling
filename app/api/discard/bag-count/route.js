@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
+import { addCanonicalDiscardBagCount, getCanonicalDiscardBagCount } from "@/lib/discard-canonical";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { NextResponse } from "next/server";
 
 async function getDiscardAccountId() {
@@ -7,11 +9,7 @@ async function getDiscardAccountId() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const db = createServiceClient();
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, discard_account_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
   if (profile?.role !== "discard" || !profile?.discard_account_id) return null;
   return profile.discard_account_id;
 }
@@ -34,6 +32,11 @@ export async function POST(request) {
   });
 
   if (error) return NextResponse.json({ error: "Failed to save." }, { status: 500 });
+  try {
+    await addCanonicalDiscardBagCount(db, discard_account_id, bag_count, notes);
+  } catch (canonicalError) {
+    console.error("Canonical discard bag count sync error:", canonicalError);
+  }
   return NextResponse.json({ success: true });
 }
 
@@ -42,6 +45,15 @@ export async function GET() {
   if (!discard_account_id) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
+  try {
+    const canonical = await getCanonicalDiscardBagCount(db, discard_account_id);
+    if (canonical !== null) {
+      return NextResponse.json(canonical);
+    }
+  } catch (canonicalError) {
+    console.error("Canonical discard bag count load error:", canonicalError);
+  }
+
   const { data: entries, error } = await db
     .from("discard_bag_counts")
     .select("id, bag_count, entry_type, notes, created_at")

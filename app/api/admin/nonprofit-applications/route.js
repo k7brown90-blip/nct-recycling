@@ -1,4 +1,7 @@
 import { createServiceClient } from "@/lib/supabase";
+import { findSignedAgreementDocumentForLegacySource } from "@/lib/agreement-documents";
+import { getCanonicalProgramSnapshot } from "@/lib/organization-status";
+import { mapLegacyCoOpStatusToLifecycle, syncCanonicalCoOpAdminState } from "@/lib/canonical-organizations";
 import { NextResponse } from "next/server";
 
 function checkAdminAuth(request) {
@@ -14,6 +17,7 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
+  const lifecycleStatus = searchParams.get("lifecycle_status");
 
   const supabase = createServiceClient();
   let query = supabase
@@ -21,7 +25,7 @@ export async function GET(request) {
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (status) query = query.eq("status", status);
+  if (status && !lifecycleStatus) query = query.eq("status", status);
 
   const { data, error } = await query;
 
@@ -29,7 +33,34 @@ export async function GET(request) {
     return NextResponse.json({ error: "Failed to fetch applications." }, { status: 500 });
   }
 
-  return NextResponse.json({ applications: data });
+  const applications = await Promise.all(
+    (data || []).map(async (application) => {
+      try {
+        const [canonicalProgram, canonicalAgreement] = await Promise.all([
+          getCanonicalProgramSnapshot(supabase, "nonprofit_applications", application.id),
+          findSignedAgreementDocumentForLegacySource(supabase, "nonprofit_applications", application.id),
+        ]);
+
+        return {
+          ...application,
+          canonical_program: canonicalProgram,
+          canonical_agreement_available: Boolean(canonicalAgreement?.storage_path),
+        };
+      } catch (canonicalError) {
+        console.error("Canonical nonprofit admin enrichment error:", canonicalError);
+        return application;
+      }
+    })
+  );
+
+  const filteredApplications = lifecycleStatus
+    ? applications.filter((application) => {
+        const effectiveLifecycle = application.canonical_program?.lifecycleStatus || mapLegacyCoOpStatusToLifecycle(application.status);
+        return effectiveLifecycle === lifecycleStatus;
+      })
+    : applications;
+
+  return NextResponse.json({ applications: filteredApplications });
 }
 
 export async function DELETE(request) {
@@ -108,6 +139,22 @@ export async function PATCH(request) {
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+
+  try {
+    const { data: application, error: applicationError } = await supabase
+      .from("nonprofit_applications")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (applicationError) {
+      throw applicationError;
+    }
+
+    await syncCanonicalCoOpAdminState(supabase, application);
+  } catch (canonicalError) {
+    console.error("Canonical nonprofit admin update sync error:", canonicalError);
+  }
 
   return NextResponse.json({ success: true });
 }

@@ -452,7 +452,7 @@ export default function ApplyPage() {
             </h2>
             <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4 text-sm text-amber-800">
               <strong>Colorado Tax Exemption Required:</strong> Wholesale purchases require a valid
-              Colorado Sales Tax License. Please upload your Form DR 0563 (Resale Certificate).
+              Colorado Sales Tax License. Please upload your Form DR 5003 (Sales Tax Exemption Certificate).
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -501,7 +501,7 @@ export default function ApplyPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Upload Form DR 0563 (Resale Certificate)
+                  Upload Form DR 5003 (Sales Tax Exemption Certificate)
                 </label>
                 <input
                   type="file"

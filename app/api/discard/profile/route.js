@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { NextResponse } from "next/server";
 
 async function getDiscardAccountId() {
@@ -7,11 +8,7 @@ async function getDiscardAccountId() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const db = createServiceClient();
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, discard_account_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
   if (profile?.role !== "discard" || !profile?.discard_account_id) return null;
   return profile.discard_account_id;
 }

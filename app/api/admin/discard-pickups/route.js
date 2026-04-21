@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { createCanonicalDiscardPickup, deleteCanonicalDiscardPickup, getCanonicalDiscardPickups, updateCanonicalDiscardPickup } from "@/lib/discard-canonical";
 import { NextResponse } from "next/server";
 
 function checkAuth(request) {
@@ -37,6 +38,15 @@ export async function GET(request) {
   if (!account_id) return NextResponse.json({ error: "Missing account_id." }, { status: 400 });
 
   const db = createServiceClient();
+  try {
+    const canonical = await getCanonicalDiscardPickups(db, account_id);
+    if (canonical !== null) {
+      return NextResponse.json({ pickups: canonical || [] });
+    }
+  } catch (canonicalError) {
+    console.error("Canonical discard pickups load error:", canonicalError);
+  }
+
   const { data, error } = await db
     .from("discard_pickups")
     .select("*")
@@ -44,6 +54,7 @@ export async function GET(request) {
     .order("pickup_date", { ascending: false });
 
   if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
+
   return NextResponse.json({ pickups: data || [] });
 }
 
@@ -63,7 +74,7 @@ export async function POST(request) {
   // Fetch account for rate calculation
   const { data: account, error: acctError } = await db
     .from("discard_accounts")
-    .select("pickup_frequency, rate_per_1000_lbs, min_lbs_weekly, min_lbs_biweekly, min_lbs_adhoc")
+    .select("pickup_frequency, rate_per_1000_lbs, flat_rate_per_pickup, min_lbs_weekly, min_lbs_biweekly, min_lbs_adhoc")
     .eq("id", account_id)
     .single();
 
@@ -72,7 +83,7 @@ export async function POST(request) {
   const isAccepted = accepted !== false;
   const amount_owed = isAccepted ? calcPayment(weight_lbs, load_type || "recurring", account) : 0;
 
-  const { error } = await db.from("discard_pickups").insert({
+  const pickupPayload = {
     account_id,
     pickup_date,
     pickup_time: pickup_time || null,
@@ -83,9 +94,22 @@ export async function POST(request) {
     accepted: isAccepted,
     rejection_reason: !isAccepted ? (rejection_reason || null) : null,
     notes: notes || null,
-  });
+  };
+
+  const { data: insertedPickup, error } = await db
+    .from("discard_pickups")
+    .insert(pickupPayload)
+    .select("id")
+    .single();
 
   if (error) return NextResponse.json({ error: "Failed to log pickup." }, { status: 500 });
+
+  try {
+    await createCanonicalDiscardPickup(db, insertedPickup.id, account_id, pickupPayload);
+  } catch (canonicalError) {
+    console.error("Canonical discard pickup sync error:", canonicalError);
+  }
+
   return NextResponse.json({ success: true, amount_owed });
 }
 
@@ -111,6 +135,13 @@ export async function PATCH(request) {
   const db = createServiceClient();
   const { error } = await db.from("discard_pickups").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+
+  try {
+    await updateCanonicalDiscardPickup(db, id, updates);
+  } catch (canonicalError) {
+    console.error("Canonical discard pickup update error:", canonicalError);
+  }
+
   return NextResponse.json({ success: true });
 }
 
@@ -124,5 +155,12 @@ export async function DELETE(request) {
   const db = createServiceClient();
   const { error } = await db.from("discard_pickups").delete().eq("id", id);
   if (error) return NextResponse.json({ error: "Delete failed." }, { status: 500 });
+
+  try {
+    await deleteCanonicalDiscardPickup(db, id);
+  } catch (canonicalError) {
+    console.error("Canonical discard pickup delete error:", canonicalError);
+  }
+
   return NextResponse.json({ success: true });
 }

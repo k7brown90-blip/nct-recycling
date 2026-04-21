@@ -13,17 +13,25 @@ function UpdatePasswordForm() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [linkError, setLinkError] = useState("");
+  const [verificationIssue, setVerificationIssue] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const supabase = createClient();
     let settled = false;
 
+    setSessionReady(false);
+    setLinkError("");
+    setVerificationIssue("");
+
     function markReady() {
       if (!settled) {
         settled = true;
         setSessionReady(true);
+        setVerificationIssue("");
+        setLinkError("");
       }
     }
 
@@ -32,6 +40,12 @@ function UpdatePasswordForm() {
         settled = true;
         console.error("Auth link error:", reason);
         setLinkError(reason || "This link has expired or is invalid.");
+      }
+    }
+
+    function markSlow(reason) {
+      if (!settled) {
+        setVerificationIssue(reason);
       }
     }
 
@@ -48,7 +62,11 @@ function UpdatePasswordForm() {
         const code = new URLSearchParams(window.location.search).get("code");
         if (code) {
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) console.error("exchangeCodeForSession error:", error.message);
+          if (error) {
+            console.error("exchangeCodeForSession error:", error.message);
+            markFailed("We couldn't verify this link. It may have expired, already been used, or your browser may have blocked the secure sign-in handoff.");
+            return;
+          }
           if (data?.session) { markReady(); return; }
         }
 
@@ -61,7 +79,11 @@ function UpdatePasswordForm() {
 
           if (access_token && refresh_token) {
             const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
-            if (error) console.error("setSession error:", error.message);
+            if (error) {
+              console.error("setSession error:", error.message);
+              markFailed("We couldn't verify this link. It may have expired, already been used, or your browser may have blocked the secure sign-in handoff.");
+              return;
+            }
             if (data?.session) { markReady(); return; }
           }
         }
@@ -78,16 +100,21 @@ function UpdatePasswordForm() {
 
     init();
 
-    // Timeout: if nothing resolves in 12 seconds, show a clear error
+    // Soft timeout: don't declare the link expired just because session setup is slow.
     const timeout = setTimeout(() => {
-      markFailed("This link has expired or has already been used. Please contact NCT Recycling to request a new invite.");
+      markSlow("This is taking longer than expected. Your browser may still be processing the secure sign-in handoff.");
     }, 12000);
 
     return () => {
+      settled = true;
       subscription.unsubscribe();
       clearTimeout(timeout);
     };
-  }, []);
+  }, [retryCount]);
+
+  function handleRetryVerification() {
+    setRetryCount((count) => count + 1);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -138,6 +165,13 @@ function UpdatePasswordForm() {
               <a href="tel:+19702329108" className="text-nct-navy underline">(970) 232-9108</a>.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={handleRetryVerification}
+            className="mt-6 w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors"
+          >
+            Retry Verification
+          </button>
           <Link href="/auth/forgot-password" className="block mt-6 text-sm text-nct-navy underline">
             Already have an account? Reset your password →
           </Link>
@@ -150,9 +184,27 @@ function UpdatePasswordForm() {
   if (!sessionReady) {
     return (
       <main className="min-h-[70vh] flex items-center justify-center px-4">
-        <div className="text-center">
+        <div className="text-center max-w-md">
           <div className="w-8 h-8 border-4 border-nct-navy border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-500 text-sm">Verifying your link…</p>
+          {verificationIssue && (
+            <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4 text-left">
+              <h2 className="text-sm font-bold text-amber-800 mb-2">Still Working</h2>
+              <p className="text-sm text-amber-700">{verificationIssue}</p>
+              <div className="mt-4 flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={handleRetryVerification}
+                  className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors"
+                >
+                  Retry Verification
+                </button>
+                <Link href="/auth/forgot-password" className="text-sm text-nct-navy underline">
+                  Request a new password link →
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     );

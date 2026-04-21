@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-export default function AgreementDownloadButton() {
+export default function AgreementDownloadButton({ endpoint = "/api/nonprofit/agreement", label = "Download Signed Agreement (PDF) →" }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -9,7 +9,7 @@ export default function AgreementDownloadButton() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/nonprofit/agreement");
+      const res = await fetch(endpoint);
       const json = await res.json();
       if (!res.ok || !json.url) {
         setError(json.error || "Agreement not available yet.");
@@ -30,7 +30,7 @@ export default function AgreementDownloadButton() {
         disabled={loading}
         className="text-sm font-medium text-nct-navy underline hover:text-nct-gold transition-colors disabled:opacity-50"
       >
-        {loading ? "Generating link…" : "Download Signed Agreement (PDF) →"}
+        {loading ? "Generating link…" : label}
       </button>
       {error && <p className="text-red-600 text-xs mt-1">{error}</p>}
     </div>

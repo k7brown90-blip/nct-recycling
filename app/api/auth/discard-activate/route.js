@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { upsertProfileRecord } from "@/lib/auth-profile";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
@@ -58,11 +59,11 @@ export async function POST(request) {
       console.warn("Invite link failed, falling back to magiclink:", inviteError.message);
     } else {
       // Upsert profile and link user_id to account
-      await db.from("profiles").upsert({
+      await upsertProfileRecord({
         id: inviteData.user.id,
         role: "discard",
         discard_account_id: account.id,
-      });
+      }, db);
       await db.from("discard_accounts").update({ user_id: inviteData.user.id }).eq("id", account.id);
       actionLink = inviteData.properties.action_link;
     }
@@ -82,11 +83,11 @@ export async function POST(request) {
     }
 
     // Ensure profile and account link are correct
-    await db.from("profiles").upsert({
+    await upsertProfileRecord({
       id: magicData.user.id,
       role: "discard",
       discard_account_id: account.id,
-    });
+    }, db);
     await db.from("discard_accounts").update({ user_id: magicData.user.id }).eq("id", account.id);
     actionLink = magicData.properties.action_link;
   }

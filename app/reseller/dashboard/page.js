@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import SignOutButton from "@/components/SignOutButton";
@@ -13,12 +14,7 @@ export default async function ResellerDashboard() {
   if (!user) redirect("/login");
 
   const db = createServiceClient();
-
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, application_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
 
   if (!["reseller", "both"].includes(profile?.role)) redirect("/dashboard");
 
@@ -98,7 +94,7 @@ export default async function ResellerDashboard() {
         <h2 className="font-bold mb-2">Location & Hours</h2>
         <div className="text-sm space-y-1 text-gray-200">
           <p>📍 6108 South College Ave, STE C — Fort Collins, CO 80525</p>
-          <p>🛍 Boutique: Mon–Thu 12PM–8PM (no booking needed)</p>
+          <p>🛍 Boutique: Mon–Thu 12PM–6PM (no booking needed)</p>
           <p>🗑️ Reseller Bins: Tue–Thu 12PM–4PM (route-dependent)</p>
           <p>☀️ Sunday Bin Sale: 12PM–4PM · $2/lb · open to all</p>
         </div>

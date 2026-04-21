@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
+import { getCanonicalProgramSnapshot } from "@/lib/organization-status";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import AccountSettingsForm from "@/components/AccountSettingsForm";
@@ -12,22 +14,32 @@ export default async function AccountSettingsPage() {
   if (!user) redirect("/login");
 
   const db = createServiceClient();
-
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, application_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
 
   let appData = null;
-  if (profile?.application_id) {
-    const table = profile.role === "nonprofit" ? "nonprofit_applications" : "reseller_applications";
-    const { data } = await db.from(table).select("*").eq("id", profile.application_id).maybeSingle();
+  let program = null;
+  if (profile?.role === "nonprofit" && profile?.application_id) {
+    const [{ data }, canonicalProgram] = await Promise.all([
+      db.from("nonprofit_applications").select("*").eq("id", profile.application_id).maybeSingle(),
+      getCanonicalProgramSnapshot(db, "nonprofit_applications", profile.application_id),
+    ]);
     appData = data;
+    program = canonicalProgram;
+  } else if ((profile?.role === "reseller" || profile?.role === "both") && profile?.application_id) {
+    const { data } = await db.from("reseller_applications").select("*").eq("id", profile.application_id).maybeSingle();
+    appData = data;
+  } else if (profile?.role === "discard" && profile?.discard_account_id) {
+    const [{ data }, canonicalProgram] = await Promise.all([
+      db.from("discard_accounts").select("*").eq("id", profile.discard_account_id).maybeSingle(),
+      getCanonicalProgramSnapshot(db, "discard_accounts", profile.discard_account_id),
+    ]);
+    appData = data;
+    program = canonicalProgram;
   }
 
   // Determine where the back link goes
   const dashboardHref = profile?.role === "nonprofit" ? "/nonprofit/dashboard"
+    : profile?.role === "discard" ? "/discard/dashboard"
     : (profile?.role === "reseller" || profile?.role === "both") ? "/reseller/dashboard"
     : "/dashboard";
 
@@ -47,6 +59,7 @@ export default async function AccountSettingsPage() {
       <AccountSettingsForm
         role={profile?.role}
         appData={appData}
+        program={program}
         email={user.email}
       />
     </main>

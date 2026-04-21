@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { getCanonicalDiscardBagCount, markCanonicalDiscardPickupCollected } from "@/lib/discard-canonical";
 import { NextResponse } from "next/server";
 
 function checkAuth(request) {
@@ -14,6 +15,15 @@ export async function GET(request) {
   if (!account_id) return NextResponse.json({ error: "Missing account_id." }, { status: 400 });
 
   const db = createServiceClient();
+  try {
+    const canonical = await getCanonicalDiscardBagCount(db, account_id, 20);
+    if (canonical !== null) {
+      return NextResponse.json({ total: canonical.total, entries: canonical.entries || [] });
+    }
+  } catch (canonicalError) {
+    console.error("Canonical admin discard bag count load error:", canonicalError);
+  }
+
   const { data: entries, error } = await db
     .from("discard_bag_counts")
     .select("id, bag_count, entry_type, notes, created_at")
@@ -47,5 +57,10 @@ export async function POST(request) {
   });
 
   if (error) return NextResponse.json({ error: "Failed." }, { status: 500 });
+  try {
+    await markCanonicalDiscardPickupCollected(db, account_id);
+  } catch (canonicalError) {
+    console.error("Canonical admin discard pickup mark error:", canonicalError);
+  }
   return NextResponse.json({ success: true });
 }

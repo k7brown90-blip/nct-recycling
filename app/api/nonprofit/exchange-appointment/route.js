@@ -1,13 +1,10 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { NextResponse } from "next/server";
 
 async function getNonprofitProfile(user, db) {
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, application_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
 
   if (profile?.role !== "nonprofit" || !profile?.application_id) return null;
   return profile;

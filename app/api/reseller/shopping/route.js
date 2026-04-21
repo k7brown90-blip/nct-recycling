@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 
@@ -33,11 +34,7 @@ function calcBinsCap(day) {
 }
 
 async function getResellerProfile(user, db) {
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, application_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
 
   if (!["reseller", "both"].includes(profile?.role) || !profile?.application_id) return null;
 

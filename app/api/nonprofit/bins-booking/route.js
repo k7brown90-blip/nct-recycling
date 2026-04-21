@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 
@@ -13,8 +14,7 @@ export async function GET(request) {
   if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
-  const { data: profile } = await db
-    .from("profiles").select("role, application_id").eq("id", user.id).maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
   if (profile?.role !== "nonprofit") return NextResponse.json({ error: "Not a nonprofit account." }, { status: 403 });
 
   const today = new Date().toISOString().split("T")[0];
@@ -58,8 +58,7 @@ export async function POST(request) {
   if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
-  const { data: profile } = await db
-    .from("profiles").select("role, application_id").eq("id", user.id).maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
   if (profile?.role !== "nonprofit" || !profile?.application_id) {
     return NextResponse.json({ error: "Not a nonprofit account." }, { status: 403 });
   }
@@ -153,8 +152,7 @@ export async function DELETE(request) {
   if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
-  const { data: profile } = await db
-    .from("profiles").select("role, application_id").eq("id", user.id).maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
   if (profile?.role !== "nonprofit") return NextResponse.json({ error: "Not a nonprofit account." }, { status: 403 });
 
   const { shopping_day_id } = await request.json();

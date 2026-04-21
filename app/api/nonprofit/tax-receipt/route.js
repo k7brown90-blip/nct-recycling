@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -27,7 +28,7 @@ export async function GET(request) {
   if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
-  const { data: profile } = await db.from("profiles").select("application_id, role").eq("id", user.id).single();
+  const profile = await getOrCreateProfile(user, db);
   if (!profile || profile.role !== "nonprofit") return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
   const { data, error } = await db
@@ -47,7 +48,7 @@ export async function POST(request) {
   if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
-  const { data: profile } = await db.from("profiles").select("application_id, role").eq("id", user.id).single();
+  const profile = await getOrCreateProfile(user, db);
   if (!profile || profile.role !== "nonprofit") return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
   const formData = await request.formData();

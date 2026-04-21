@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { getCanonicalCoOpRoutes } from "@/lib/co-op-canonical";
 import { NextResponse } from "next/server";
 
 function checkAuth(request) {
@@ -42,7 +43,7 @@ export async function GET(request) {
   let query = db
     .from("shopping_days")
     .select(`
-      id, shopping_date, status, admin_notes, wholesale_capacity, bins_capacity, created_at,
+      id, route_id, shopping_date, status, admin_notes, wholesale_capacity, bins_capacity, created_at,
       pickup_routes (id, scheduled_date, scheduled_time, estimated_total_bags, actual_total_bags)
     `)
     .order("shopping_date", { ascending: false });
@@ -54,6 +55,18 @@ export async function GET(request) {
 
   const { data: days, error } = await query;
   if (error) return NextResponse.json({ error: "Failed to load." }, { status: 500 });
+
+  let canonicalRouteById = new Map();
+  try {
+    const canonicalRoutes = await getCanonicalCoOpRoutes(
+      db,
+      null,
+      (days || []).map((day) => day.route_id).filter(Boolean)
+    );
+    canonicalRouteById = new Map((canonicalRoutes || []).map((route) => [route.id, route]));
+  } catch (canonicalError) {
+    console.error("Canonical co-op shopping day route load error:", canonicalError);
+  }
 
   const dayIds = (days || []).map((d) => d.id);
 
@@ -75,7 +88,7 @@ export async function GET(request) {
   }
 
   const result = (days || []).map((day) => {
-    const route  = day.pickup_routes;
+    const route  = canonicalRouteById.get(day.route_id) || day.pickup_routes;
     const wCap   = calcWholesaleCap(day, route);
     const bCap   = calcBinsCap(day);
     const sunday = isSunday(day.shopping_date);
@@ -87,6 +100,7 @@ export async function GET(request) {
 
     return {
       ...day,
+      pickup_routes: route,
       is_sunday: sunday,
       // wholesale_capacity_auto = what auto-calc gives (shown in UI even when overridden)
       wholesale_capacity_auto: (() => {

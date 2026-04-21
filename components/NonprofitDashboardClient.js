@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
+import { getProgramStatusPresentation } from "@/lib/organization-status";
 import SignOutButton from "@/components/SignOutButton";
+import BagCountForm from "@/components/BagCountForm";
 import PickupRequestForm from "@/components/PickupRequestForm";
 import NonprofitBinsBooker from "@/components/NonprofitBinsBooker";
 import AppointmentRequestForm from "@/components/AppointmentRequestForm";
@@ -15,12 +17,18 @@ const APPT_STATUS_COLORS = {
   cancelled:  "bg-gray-100 text-gray-600",
 };
 
-// section: null | "pickup" | "inventory" | "receipts"
-export default function NonprofitDashboardClient({ app, user, appointments, pendingAppt, recentPickups }) {
+// section: null | "pickup" | "bags" | "inventory" | "receipts"
+export default function NonprofitDashboardClient({ app, program, user, appointments, pendingAppt, recentPickups }) {
   const [section, setSection] = useState(null);
   const [inventoryTab, setInventoryTab] = useState("bins"); // "bins" | "delivery"
 
   const firstName = app?.contact_name?.split(" ")[0] || "Partner";
+  const status = getProgramStatusPresentation(program?.lifecycleStatus || "active");
+  const accountType = program?.accountType || app?.account_type;
+  const sinceDate = program?.startedAt || app?.created_at;
+  const orgName = program?.legalName || app?.org_name;
+  const signedAs = program?.agreementSignerName || app?.contract_signed_name;
+  const agreedAt = program?.agreementSignedAt || app?.contract_agreed_at;
 
   function SectionHeader({ title, back }) {
     return (
@@ -45,6 +53,22 @@ export default function NonprofitDashboardClient({ app, user, appointments, pend
           Tell us how full your donation bags are. NCT will add you to an upcoming route and confirm your pickup date.
         </p>
         <PickupRequestForm onBack={() => setSection(null)} />
+      </div>
+    );
+  }
+
+  // ── Section: Log Bag Count ──
+  if (section === "bags") {
+    return (
+      <div>
+        <SectionHeader title="Log Bag Count" />
+        <p className="text-sm text-gray-500 mb-4">
+          Record how many donation bags are currently ready so NCT can see your latest pickup volume.
+        </p>
+        <BagCountForm />
+        <button onClick={() => setSection(null)} className="w-full text-sm text-gray-500 hover:text-gray-700 py-3 underline mt-4">
+          ← Back to Dashboard
+        </button>
       </div>
     );
   }
@@ -140,30 +164,30 @@ export default function NonprofitDashboardClient({ app, user, appointments, pend
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-nct-navy">Welcome, {firstName}</h1>
-          <p className="text-gray-500 text-sm mt-1">{app?.org_name} · {user.email}</p>
+          <p className="text-gray-500 text-sm mt-1">{orgName} · {user.email}</p>
         </div>
         <SignOutButton />
       </div>
 
       {/* Status row */}
       <div className="grid grid-cols-3 gap-3 mb-8">
-        <div className="bg-green-50 border border-green-300 rounded-xl p-4">
-          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">Status</p>
-          <p className="text-lg font-bold text-green-800">Active</p>
+        <div className={`${status.cardClass} border rounded-xl p-4`}>
+          <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${status.eyebrowClass}`}>Status</p>
+          <p className={`text-lg font-bold ${status.textClass}`}>{status.label}</p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Account</p>
-          <p className="text-sm font-bold text-nct-navy">{app?.account_type === "fl" ? "Full Load" : "LTL"}</p>
+          <p className="text-sm font-bold text-nct-navy">{accountType === "fl" ? "Full Load" : "LTL"}</p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Since</p>
           <p className="text-sm font-bold text-nct-navy">
-            {app?.created_at ? new Date(app.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—"}
+            {sinceDate ? new Date(sinceDate).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—"}
           </p>
         </div>
       </div>
 
-      {/* 3 Action buttons */}
+      {/* Action buttons */}
       <div className="space-y-3 mb-8">
         <button
           onClick={() => setSection("pickup")}
@@ -178,6 +202,22 @@ export default function NonprofitDashboardClient({ app, user, appointments, pend
           </div>
           <span className="ml-auto text-gray-400 group-hover:text-white text-xl">›</span>
         </button>
+
+        {accountType !== "fl" && (
+          <button
+            onClick={() => setSection("bags")}
+            className="w-full flex items-center gap-4 bg-white border-2 border-gray-200 rounded-2xl p-5 hover:border-nct-navy group transition-colors text-left"
+          >
+            <div className="w-12 h-12 rounded-xl bg-gray-100 group-hover:bg-nct-navy/10 flex items-center justify-center shrink-0">
+              <span className="text-2xl">🧺</span>
+            </div>
+            <div>
+              <p className="font-bold text-nct-navy text-lg">Log Bag Count</p>
+              <p className="text-sm text-gray-500">Add newly filled donation bags so your current pickup total stays accurate.</p>
+            </div>
+            <span className="ml-auto text-gray-400 text-xl">›</span>
+          </button>
+        )}
 
         <button
           onClick={() => setSection("inventory")}
@@ -265,12 +305,12 @@ export default function NonprofitDashboardClient({ app, user, appointments, pend
         <dl className="grid grid-cols-2 gap-3 text-sm mb-3">
           <div>
             <dt className="text-gray-500">Signed as</dt>
-            <dd className="font-medium">{app?.contract_signed_name || "—"}</dd>
+            <dd className="font-medium">{signedAs || "—"}</dd>
           </div>
           <div>
             <dt className="text-gray-500">Agreed on</dt>
             <dd className="font-medium">
-              {app?.contract_agreed_at ? new Date(app.contract_agreed_at).toLocaleDateString() : "—"}
+              {agreedAt ? new Date(agreedAt).toLocaleDateString() : "—"}
             </dd>
           </div>
           {app?.ein && (

@@ -1,4 +1,13 @@
 import { createServiceClient } from "@/lib/supabase";
+import {
+  completeCanonicalCoOpStop,
+  createCanonicalCoOpRoute,
+  getCanonicalCoOpRoutes,
+  markCanonicalCoOpPickupCollected,
+  syncCanonicalCoOpRouteAggregate,
+  updateCanonicalCoOpRequestStatus,
+  updateCanonicalCoOpRouteStatus,
+} from "@/lib/co-op-canonical";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 
@@ -6,6 +15,42 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 function checkAdminAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.ADMIN_SECRET}`;
+}
+
+async function syncLegacyRouteAggregate(db, routeId) {
+  const { data: stops, error: stopsError } = await db
+    .from("pickup_route_stops")
+    .select("actual_bags, no_inventory, stop_status")
+    .eq("route_id", routeId);
+
+  if (stopsError) {
+    throw stopsError;
+  }
+
+  const normalizedStops = stops || [];
+  const allResolved = normalizedStops.length > 0 && normalizedStops.every((stop) => ["completed", "skipped"].includes(stop.stop_status));
+  const completionType = normalizedStops.some((stop) => stop.no_inventory || stop.stop_status === "skipped") ? "partial" : "full";
+  const actualTotalBags = normalizedStops.reduce((sum, stop) => sum + Number(stop.actual_bags || 0), 0);
+
+  const updates = {
+    actual_total_bags: actualTotalBags,
+    completion_type: allResolved ? completionType : null,
+  };
+
+  if (allResolved) {
+    updates.status = "completed";
+  }
+
+  const { error: routeError } = await db
+    .from("pickup_routes")
+    .update(updates)
+    .eq("id", routeId);
+
+  if (routeError) {
+    throw routeError;
+  }
+
+  return updates;
 }
 
 // GET — list pickup routes
@@ -18,18 +63,16 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
 
-  let query = db
+  const query = db
     .from("pickup_routes")
     .select("*")
     .order("scheduled_date", { ascending: false });
-
-  if (status) query = query.eq("status", status);
 
   const { data: routes, error } = await query;
   if (error) return NextResponse.json({ error: "Failed to load routes." }, { status: 500 });
 
   // Get stops for each route with nonprofit info
-  const routeIds = routes.map((r) => r.id);
+  const routeIds = (routes || []).map((r) => r.id);
   const { data: stops } = await db
     .from("pickup_route_stops")
     .select(`
@@ -46,8 +89,47 @@ export async function GET(request) {
     stopsByRoute[s.route_id].push(s);
   }
 
-  const result = routes.map((r) => ({ ...r, stops: stopsByRoute[r.id] || [] }));
-  return NextResponse.json({ routes: result });
+  const legacyRoutes = (routes || []).map((route) => ({ ...route, stops: stopsByRoute[route.id] || [] }));
+
+  try {
+    const canonicalRoutes = await getCanonicalCoOpRoutes(db);
+    if (canonicalRoutes) {
+      const mergedRoutes = new Map(legacyRoutes.map((route) => [route.id, route]));
+
+      for (const canonicalRoute of canonicalRoutes) {
+        const legacyRoute = mergedRoutes.get(canonicalRoute.id);
+        const legacyStopsByKey = new Map(
+          (legacyRoute?.stops || []).map((stop) => [
+            `${stop.stop_order}:${stop.nonprofit_id || stop.nonprofit_applications?.id || ""}`,
+            stop,
+          ])
+        );
+        const mergedStops = (canonicalRoute.stops || []).map((stop) => {
+          const key = `${stop.stop_order}:${stop.nonprofit_id || stop.nonprofit_applications?.id || ""}`;
+          const legacyStop = legacyStopsByKey.get(key);
+          return legacyStop
+            ? { ...legacyStop, ...stop, id: legacyStop.id }
+            : stop;
+        });
+        mergedRoutes.set(canonicalRoute.id, {
+          ...legacyRoute,
+          ...canonicalRoute,
+          stops: mergedStops.length ? mergedStops : legacyRoute?.stops || [],
+        });
+      }
+
+      const effectiveRoutes = [...mergedRoutes.values()]
+        .filter((route) => !status || route.status === status)
+        .sort((left, right) => new Date(right.scheduled_date) - new Date(left.scheduled_date));
+
+      return NextResponse.json({ routes: effectiveRoutes });
+    }
+  } catch (canonicalError) {
+    console.error("Canonical co-op routes load error:", canonicalError);
+  }
+
+  const filteredLegacyRoutes = status ? legacyRoutes.filter((route) => route.status === status) : legacyRoutes;
+  return NextResponse.json({ routes: filteredLegacyRoutes });
 }
 
 // POST — create a new pickup route, notify nonprofits and resellers
@@ -112,6 +194,18 @@ export async function POST(request) {
     status: "open",
   });
 
+  try {
+    await createCanonicalCoOpRoute(db, route.id, {
+      scheduled_date,
+      scheduled_time,
+      shopping_date,
+      notes,
+      stops: stopRows,
+    });
+  } catch (canonicalError) {
+    console.error("Canonical co-op route create sync error:", canonicalError);
+  }
+
   // Mark any pending pickup requests for nonprofits on this route as scheduled
   const nonprofitIds = stops.map((s) => s.nonprofit_id);
   await db
@@ -119,6 +213,10 @@ export async function POST(request) {
     .update({ status: "scheduled" })
     .in("nonprofit_id", nonprofitIds)
     .eq("status", "pending");
+
+  await Promise.allSettled(
+    nonprofitIds.map((nonprofitId) => updateCanonicalCoOpRequestStatus(db, nonprofitId, "scheduled"))
+  );
 
   // Fetch nonprofit details for notification
   const { data: nonprofits } = await db
@@ -202,6 +300,15 @@ export async function POST(request) {
     resellers_notified_at: new Date().toISOString(),
   }).eq("id", route.id);
 
+  try {
+    await updateCanonicalCoOpRouteStatus(db, route.id, "scheduled", {
+      nonprofits_notified_at: new Date().toISOString(),
+      resellers_notified_at: new Date().toISOString(),
+    });
+  } catch (canonicalError) {
+    console.error("Canonical co-op route notification sync error:", canonicalError);
+  }
+
   return NextResponse.json({ success: true, id: route.id });
 }
 
@@ -228,11 +335,18 @@ export async function PATCH(request) {
       .update({
         stop_status: "completed",
         actual_bags: actual_bags ?? null,
+        no_inventory: actual_bags == null || Number(actual_bags) === 0,
         completed_at: new Date().toISOString(),
       })
       .eq("id", stop_id);
 
     if (stopError) return NextResponse.json({ error: "Failed to update stop." }, { status: 500 });
+
+    const { data: legacyStop } = await db
+      .from("pickup_route_stops")
+      .select("stop_order, notes")
+      .eq("id", stop_id)
+      .maybeSingle();
 
     // Insert a pickup reset entry — resets this nonprofit's running bag counter to 0
     await db.from("bag_counts").insert({
@@ -241,6 +355,25 @@ export async function PATCH(request) {
       entry_type: "pickup",
       notes: `Picked up by NCT — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
     });
+
+    try {
+      if (route_id && legacyStop?.stop_order != null) {
+        await completeCanonicalCoOpStop(
+          db,
+          route_id,
+          nonprofit_id,
+          legacyStop.stop_order,
+          actual_bags ?? null,
+          new Date().toISOString(),
+          legacyStop.notes || null
+        );
+        await syncCanonicalCoOpRouteAggregate(db, route_id);
+      }
+      await markCanonicalCoOpPickupCollected(db, nonprofit_id, `Picked up by NCT - ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`);
+      await updateCanonicalCoOpRequestStatus(db, nonprofit_id, "completed");
+    } catch (canonicalError) {
+      console.error("Canonical co-op pickup completion sync error:", canonicalError);
+    }
 
     // Send pickup confirmation email to nonprofit
     if (route_id) {
@@ -268,16 +401,12 @@ export async function PATCH(request) {
       }
     }
 
-    // Update route's actual_total_bags running sum
-    if (actual_bags && route_id) {
-      const { data: route } = await db
-        .from("pickup_routes")
-        .select("actual_total_bags")
-        .eq("id", route_id)
-        .single();
-      await db.from("pickup_routes").update({
-        actual_total_bags: (route?.actual_total_bags || 0) + actual_bags,
-      }).eq("id", route_id);
+    if (route_id) {
+      try {
+        await syncLegacyRouteAggregate(db, route_id);
+      } catch (aggregateError) {
+        console.error("Legacy co-op route aggregate sync error:", aggregateError);
+      }
     }
 
     return NextResponse.json({ success: true });
@@ -293,8 +422,27 @@ export async function PATCH(request) {
     if (!valid.includes(status)) {
       return NextResponse.json({ error: "Invalid status." }, { status: 400 });
     }
-    const { error } = await db.from("pickup_routes").update({ status }).eq("id", route_id);
+    const routeUpdates = { status };
+    if (status !== "completed") {
+      routeUpdates.completion_type = null;
+    } else {
+      const { data: stops } = await db
+        .from("pickup_route_stops")
+        .select("no_inventory, stop_status")
+        .eq("route_id", route_id);
+
+      routeUpdates.completion_type = (stops || []).some((stop) => stop.no_inventory || stop.stop_status === "skipped") ? "partial" : "full";
+    }
+
+    const { error } = await db.from("pickup_routes").update(routeUpdates).eq("id", route_id);
     if (error) return NextResponse.json({ error: "Failed to update route." }, { status: 500 });
+
+    try {
+      await updateCanonicalCoOpRouteStatus(db, route_id, status, { completion_type: routeUpdates.completion_type ?? null });
+    } catch (canonicalError) {
+      console.error("Canonical co-op route status sync error:", canonicalError);
+    }
+
     return NextResponse.json({ success: true });
   }
 

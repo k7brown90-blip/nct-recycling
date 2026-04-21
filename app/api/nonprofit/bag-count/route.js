@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
+import { addCanonicalCoOpBagCount, getCanonicalCoOpBagCount } from "@/lib/co-op-canonical";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { NextResponse } from "next/server";
 
 async function getNonprofitId() {
@@ -7,11 +9,7 @@ async function getNonprofitId() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const db = createServiceClient();
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role, application_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
   if (profile?.role !== "nonprofit" || !profile?.application_id) return null;
   return profile.application_id;
 }
@@ -40,6 +38,12 @@ export async function POST(request) {
     return NextResponse.json({ error: "Failed to save." }, { status: 500 });
   }
 
+  try {
+    await addCanonicalCoOpBagCount(db, nonprofit_id, bag_count, notes);
+  } catch (canonicalError) {
+    console.error("Canonical co-op bag count sync error:", canonicalError);
+  }
+
   return NextResponse.json({ success: true });
 }
 
@@ -49,6 +53,15 @@ export async function GET() {
   if (!nonprofit_id) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const db = createServiceClient();
+  try {
+    const canonicalSnapshot = await getCanonicalCoOpBagCount(db, nonprofit_id);
+    if (canonicalSnapshot !== null) {
+      return NextResponse.json(canonicalSnapshot);
+    }
+  } catch (canonicalError) {
+    console.error("Canonical co-op bag count load error:", canonicalError);
+  }
+
   const { data: entries, error } = await db
     .from("bag_counts")
     .select("id, bag_count, entry_type, notes, created_at")

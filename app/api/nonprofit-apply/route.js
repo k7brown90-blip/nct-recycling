@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { syncCanonicalCoOpApplication } from "@/lib/canonical-organizations";
 import { generateAgreementPDF } from "@/lib/generate-agreement-pdf";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
@@ -54,6 +55,8 @@ export async function POST(request) {
 
     // Upload IRS letter if provided
     let irs_letter_url = null;
+    let irs_letter_name = null;
+    let irs_letter_type = null;
     if (irs_letter && irs_letter.size > 0) {
       const ext = irs_letter.name.split(".").pop();
       const fileName = `${Date.now()}_${email.replace(/[^a-z0-9]/g, "_")}.${ext}`;
@@ -61,7 +64,11 @@ export async function POST(request) {
         .from("nonprofit-docs")
         .upload(`irs-letters/${fileName}`, irs_letter, { contentType: irs_letter.type });
 
-      if (!uploadError) irs_letter_url = `irs-letters/${fileName}`;
+      if (!uploadError) {
+        irs_letter_url = `irs-letters/${fileName}`;
+        irs_letter_name = irs_letter.name;
+        irs_letter_type = irs_letter.type;
+      }
     }
 
     const contract_agreed_at = new Date().toISOString();
@@ -88,6 +95,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Failed to submit application." }, { status: 500 });
     }
 
+    const agreementStoragePath = `agreements/${data.id}.pdf`;
+
     // Generate and store signed agreement PDF — fire and forget, never block the response
     generateAgreementPDF({
       org_name, contact_name, authorized_title,
@@ -96,11 +105,46 @@ export async function POST(request) {
     }).then((pdfBytes) =>
       supabase.storage
         .from("nonprofit-docs")
-        .upload(`agreements/${data.id}.pdf`, pdfBytes, {
+        .upload(agreementStoragePath, pdfBytes, {
           contentType: "application/pdf",
           upsert: true,
         })
     ).catch((pdfErr) => console.error("PDF generation/upload error:", pdfErr));
+
+    try {
+      await syncCanonicalCoOpApplication(supabase, {
+        legacyApplicationId: data.id,
+        orgName: org_name,
+        orgType: org_type,
+        ein,
+        contactName: contact_name,
+        contactTitle: contact_title,
+        email,
+        phone,
+        website,
+        addressStreet: address_street,
+        addressCity: address_city,
+        addressState: address_state,
+        addressZip: address_zip,
+        pickupAddress: pickup_address,
+        dockInstructions: dock_instructions,
+        availablePickupHours: available_pickup_hours,
+        pickupNotes: pickup_notes,
+        estimatedDonationLbs: estimated_donation_lbs,
+        categoriesNeeded: categories_needed,
+        featureConsent: feature_consent,
+        contractAgreedAt: contract_agreed_at,
+        contractSignedName: contract_signed_name,
+        authorizedTitle: authorized_title,
+        irsLetterStoragePath: irs_letter_url,
+        irsLetterOriginalFilename: irs_letter_name,
+        irsLetterMimeType: irs_letter_type,
+        agreementStoragePath,
+        agreementOriginalFilename: `${org_name}-co-op-agreement.pdf`,
+      });
+    } catch (canonicalError) {
+      console.error("Canonical co-op sync error:", canonicalError);
+    }
 
     // Notify NCT Recycling
     resend.emails.send({

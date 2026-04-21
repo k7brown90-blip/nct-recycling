@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
+import { getOrCreateProfile } from "@/lib/auth-profile";
 import { redirect } from "next/navigation";
 
 export default async function DashboardPage() {
@@ -10,15 +11,12 @@ export default async function DashboardPage() {
 
   // Look up their profile to determine role
   const db = createServiceClient();
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await getOrCreateProfile(user, db);
 
   if (profile?.role === "nonprofit") redirect("/nonprofit/dashboard");
   if (profile?.role === "reseller" || profile?.role === "both") redirect("/reseller/dashboard");
   if (profile?.role === "discard") redirect("/discard/dashboard");
+  if (profile?.role === "employee") redirect("/employee");
 
   // No profile yet — show a holding page
   return (

@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { upsertProfileRecord } from "@/lib/auth-profile";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
@@ -61,18 +62,29 @@ export async function POST(request) {
 
   const db = createServiceClient();
 
-  // Create profile record
-  await db.from("profiles").upsert({
-    id: linkData.user.id,
-    role,
-    application_id,
-  });
+  try {
+    await upsertProfileRecord({
+      id: linkData.user.id,
+      role,
+      application_id,
+    }, db);
+  } catch (profileError) {
+    console.error("Invite profile creation error:", profileError);
+    return NextResponse.json({ error: "Account link created, but portal profile setup failed." }, { status: 500 });
+  }
 
   // Mark application as approved
-  await db
+  const { data: updatedApplication, error: applicationError } = await db
     .from(role === "nonprofit" ? "nonprofit_applications" : "reseller_applications")
     .update({ status: "approved", reviewed_at: new Date().toISOString() })
-    .eq("id", application_id);
+    .eq("id", application_id)
+    .select("id")
+    .maybeSingle();
+
+  if (applicationError || !updatedApplication) {
+    console.error("Invite application update error:", applicationError);
+    return NextResponse.json({ error: "Portal profile created, but application approval failed." }, { status: 500 });
+  }
 
   const portalLabel = role === "nonprofit" ? "Nonprofit Partner Portal" : "Retail Partner Portal";
   const greeting = full_name ? `Hi ${full_name},` : "Hi,";

@@ -4,7 +4,7 @@ import PublicCalendar from "@/components/PublicCalendar";
 export const metadata = {
   title: "Hours & Schedule — NCT Emporium",
   description:
-    "NCT Emporium open hours: boutique Mon–Thu 12–8PM, pound bins Tue–Thu, Sunday Bin Sale every Sunday 12–4PM. No login required.",
+    "NCT Emporium open hours: boutique Mon–Thu 12–6PM, pound bins Tue–Thu, Sunday Bin Sale every Sunday 12–4PM. No login required.",
 };
 
 export default function SchedulePage() {
@@ -21,13 +21,13 @@ export default function SchedulePage() {
         <div className="bg-nct-navy text-white rounded-2xl p-5">
           <p className="text-nct-gold font-bold text-xs uppercase tracking-wide mb-2">Boutique</p>
           <p className="font-bold text-lg">Mon – Thu</p>
-          <p className="text-gray-300 text-sm mt-1">12PM – 8PM · No booking</p>
+          <p className="text-gray-300 text-sm mt-1">12PM – 6PM · No booking</p>
           <p className="text-gray-400 text-xs mt-1">Retail thrift prices</p>
         </div>
         <div className="bg-blue-700 text-white rounded-2xl p-5">
           <p className="text-blue-200 font-bold text-xs uppercase tracking-wide mb-2">Pound Bins</p>
           <p className="font-bold text-lg">Tue – Thu</p>
-          <p className="text-gray-200 text-sm mt-1">Resellers 12–4PM · Public 4–8PM</p>
+          <p className="text-gray-200 text-sm mt-1">Resellers 12–4PM · Public 4–6PM</p>
           <p className="text-gray-300 text-xs mt-1">Route-dependent · $2/lb</p>
         </div>
         <div className="bg-nct-gold text-white rounded-2xl p-5">
