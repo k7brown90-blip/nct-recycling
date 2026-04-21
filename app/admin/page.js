@@ -13,7 +13,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
+const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Payroll Export", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -134,6 +134,32 @@ function sdDateStr(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function getIsoDateString(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getRelativeIsoDateString(daysOffset) {
+  const date = new Date();
+  date.setDate(date.getDate() + daysOffset);
+  return getIsoDateString(date);
+}
+
+function formatHoursFromMinutes(minutes) {
+  return ((minutes || 0) / 60).toFixed(2);
+}
+
+function downloadTextFile(content, fileName, mimeType = "text/csv;charset=utf-8;") {
+  const blob = new Blob([content], { type: mimeType });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
 export default function AdminPage() {
   const [secret, setSecret] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -189,6 +215,16 @@ export default function AdminPage() {
   const [timeReviewFilter, setTimeReviewFilter] = useState("pending");
   const [timeReviewLoading, setTimeReviewLoading] = useState(false);
   const [timeReviewSavingId, setTimeReviewSavingId] = useState(null);
+  const [payrollBatches, setPayrollBatches] = useState([]);
+  const [payrollPreviewEntries, setPayrollPreviewEntries] = useState([]);
+  const [payrollPreviewSummary, setPayrollPreviewSummary] = useState(null);
+  const [payrollLoading, setPayrollLoading] = useState(false);
+  const [payrollExporting, setPayrollExporting] = useState(false);
+  const [payrollForm, setPayrollForm] = useState({
+    period_start: getRelativeIsoDateString(-13),
+    period_end: getIsoDateString(),
+    notes: "",
+  });
 
   // Applications state
   const [applications, setApplications] = useState([]);
@@ -361,6 +397,24 @@ export default function AdminPage() {
     }
     setTimeReviewLoading(false);
   }, [secret, timeReviewFilter]);
+
+  const fetchPayrollExports = useCallback(async () => {
+    setPayrollLoading(true);
+    const params = new URLSearchParams({
+      period_start: payrollForm.period_start,
+      period_end: payrollForm.period_end,
+    });
+    const res = await fetch(`/api/admin/payroll-export?${params.toString()}`, { headers: authHeader });
+    const json = await res.json();
+    if (res.ok) {
+      setPayrollBatches(json.batches || []);
+      setPayrollPreviewEntries(json.previewEntries || []);
+      setPayrollPreviewSummary(json.previewSummary || null);
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+    setPayrollLoading(false);
+  }, [secret, payrollForm.period_start, payrollForm.period_end]);
 
   const fetchApplications = useCallback(async () => {
     setLoading(true);
@@ -559,6 +613,7 @@ export default function AdminPage() {
     if (section === "Employees") fetchEmployees();
     if (section === "Work Calendar") { fetchEmployees(); fetchWorkCalendar(); }
     if (section === "Time Review") fetchTimeReviewEntries();
+    if (section === "Payroll Export") fetchPayrollExports();
     if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
@@ -567,7 +622,7 @@ export default function AdminPage() {
     if (section === "Donation Lots") fetchLots();
     if (section === "Discard Accounts") fetchDiscardAccounts();
     if (section === "Emails") fetchEmailUsers();
-  }, [authed, section, fetchDashboard, fetchEmployees, fetchWorkCalendar, fetchTimeReviewEntries, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
+  }, [authed, section, fetchDashboard, fetchEmployees, fetchWorkCalendar, fetchTimeReviewEntries, fetchPayrollExports, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
 
   useEffect(() => {
     setSelectedWorkDate(getWorkCalendarDateString(workCalendarYear, workCalendarMonth, 1));
@@ -870,6 +925,34 @@ export default function AdminPage() {
     }
 
     setTimeReviewSavingId(null);
+  }
+
+  async function handleCreatePayrollExport() {
+    if (!payrollForm.period_start || !payrollForm.period_end) {
+      setMessage("Error: Choose a payroll period before exporting.");
+      return;
+    }
+
+    setPayrollExporting(true);
+    setMessage("");
+    const res = await fetch("/api/admin/payroll-export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify(payrollForm),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      if (json.csvContent && json.fileName) {
+        downloadTextFile(json.csvContent, json.fileName);
+      }
+      setMessage(`✅ Payroll export created for ${json.summary?.entryCount || 0} time entries.`);
+      await fetchPayrollExports();
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+
+    setPayrollExporting(false);
   }
 
   function changeWorkCalendarMonth(direction) {
@@ -2062,6 +2145,163 @@ export default function AdminPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {section === "Payroll Export" && (
+        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <section className="bg-white border border-gray-200 rounded-2xl p-5 space-y-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-nct-navy">Payroll Export</h2>
+                <p className="text-sm text-gray-500 mt-1">Export completed employee time into a CSV payroll batch and mark those entries as exported.</p>
+              </div>
+              <button onClick={fetchPayrollExports} className="px-3 py-1.5 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Period Start</label>
+                <input
+                  type="date"
+                  value={payrollForm.period_start}
+                  onChange={(e) => setPayrollForm((current) => ({ ...current, period_start: e.target.value, period_end: current.period_end < e.target.value ? e.target.value : current.period_end }))}
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-4 py-2"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Period End</label>
+                <input
+                  type="date"
+                  min={payrollForm.period_start}
+                  value={payrollForm.period_end}
+                  onChange={(e) => setPayrollForm((current) => ({ ...current, period_end: e.target.value }))}
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-4 py-2"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Batch Notes</label>
+                <textarea
+                  rows={3}
+                  value={payrollForm.notes}
+                  onChange={(e) => setPayrollForm((current) => ({ ...current, notes: e.target.value }))}
+                  placeholder="Optional payroll batch notes"
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-4 py-2"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Eligible Entries</p>
+                <p className="text-2xl font-bold text-nct-navy mt-2">{payrollPreviewSummary?.entryCount || 0}</p>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Employees</p>
+                <p className="text-2xl font-bold text-nct-navy mt-2">{payrollPreviewSummary?.employeeCount || 0}</p>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Total Hours</p>
+                <p className="text-2xl font-bold text-nct-navy mt-2">{payrollPreviewSummary?.totalHours || "0.00"}</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={fetchPayrollExports}
+                disabled={payrollLoading}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {payrollLoading ? "Refreshing preview..." : "Refresh Preview"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCreatePayrollExport}
+                disabled={payrollExporting || payrollLoading || !payrollPreviewSummary || payrollPreviewSummary.entryCount === 0}
+                className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {payrollExporting ? "Exporting payroll..." : "Export Payroll CSV"}
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500">Clock and admin-created entries are exportable once completed. Manual entries are only exported after approval. Rejected or previously exported entries are excluded.</p>
+          </section>
+
+          <div className="space-y-6">
+            <section className="bg-white border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-nct-navy">Payroll Preview</h3>
+                  <p className="text-sm text-gray-500 mt-1">Entries that will be included in the next payroll export.</p>
+                </div>
+                {payrollLoading && <span className="text-xs text-gray-500">Loading...</span>}
+              </div>
+
+              {payrollPreviewEntries.length === 0 ? (
+                <p className="text-sm text-gray-500">No eligible time entries found for this payroll period.</p>
+              ) : (
+                <div className="space-y-3">
+                  {payrollPreviewEntries.slice(0, 10).map((entry) => (
+                    <div key={entry.id} className="rounded-xl border border-gray-200 p-4 flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-semibold text-nct-navy">{entry.display_name}</p>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${entry.entry_source === "manual" ? "bg-yellow-100 text-yellow-800" : "bg-blue-100 text-blue-700"}`}>
+                            {entry.entry_source}
+                          </span>
+                        </div>
+                        {entry.job_title && <p className="text-sm text-gray-500">{entry.job_title}</p>}
+                        <p className="text-sm text-gray-700 mt-2">{formatShiftTimeRange(entry.started_at, entry.ended_at)}</p>
+                        <p className="text-xs text-gray-500 mt-1">{entry.minutes_worked} minutes · {formatHoursFromMinutes(entry.minutes_worked)} hours{entry.break_minutes ? ` · ${entry.break_minutes} break minutes` : ""}</p>
+                        {entry.notes && <p className="text-xs text-gray-500 mt-2">{entry.notes}</p>}
+                      </div>
+                      <div className="text-right min-w-[88px]">
+                        <p className="text-sm font-semibold text-nct-navy">{formatHoursFromMinutes(entry.minutes_worked)} hrs</p>
+                        <p className="text-xs text-gray-400 mt-1">{entry.approval_status}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {payrollPreviewEntries.length > 10 && (
+                    <p className="text-xs text-gray-500">Showing 10 of {payrollPreviewEntries.length} eligible entries.</p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <section className="bg-white border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-nct-navy">Recent Payroll Batches</h3>
+                  <p className="text-sm text-gray-500 mt-1">Previously exported payroll files recorded in the portal.</p>
+                </div>
+              </div>
+
+              {payrollBatches.length === 0 ? (
+                <p className="text-sm text-gray-500">No payroll batches have been exported yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {payrollBatches.map((batch) => (
+                    <div key={batch.id} className="rounded-xl border border-gray-200 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-nct-navy">{batch.period_start} through {batch.period_end}</p>
+                          <p className="text-sm text-gray-500 mt-1">{batch.entry_count} entries · {batch.employee_count} employees · {batch.total_hours} hours</p>
+                          {batch.notes && <p className="text-xs text-gray-500 mt-2">{batch.notes}</p>}
+                        </div>
+                        <div className="text-right">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${batch.status === "exported" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                            {batch.status}
+                          </span>
+                          <p className="text-xs text-gray-400 mt-2">{batch.exported_at ? `Exported ${formatAdminDateTime(batch.exported_at)}` : `Created ${formatAdminDateTime(batch.created_at)}`}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       )}
 
