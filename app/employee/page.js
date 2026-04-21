@@ -3,7 +3,7 @@ import EmployeeDashboardClient from "@/components/EmployeeDashboardClient";
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
 import { getOrCreateProfile } from "@/lib/auth-profile";
-import { activateEmployeeProfileByUserId, getEmployeeDashboardSnapshot } from "@/lib/employee-profile";
+import { activateEmployeeProfileByUserId, getEmployeeDashboardSnapshot, getTeamScheduleMonth } from "@/lib/employee-profile";
 
 export const metadata = { title: "Employee Portal" };
 
@@ -22,6 +22,16 @@ export default async function EmployeePage() {
 
   const employee = await activateEmployeeProfileByUserId(user.id, db);
   const snapshot = await getEmployeeDashboardSnapshot(employee?.id, db);
+  const now = new Date();
+  const initialCalendarMonth = { year: now.getFullYear(), month: now.getMonth() };
+  const initialCalendarShifts = await getTeamScheduleMonth(initialCalendarMonth.year, initialCalendarMonth.month, db);
 
-  return <EmployeeDashboardClient employee={employee || { work_email: user.email }} initialSnapshot={snapshot} />;
+  return (
+    <EmployeeDashboardClient
+      employee={employee || { work_email: user.email }}
+      initialSnapshot={snapshot}
+      initialCalendarMonth={initialCalendarMonth}
+      initialCalendarShifts={initialCalendarShifts}
+    />
+  );
 }

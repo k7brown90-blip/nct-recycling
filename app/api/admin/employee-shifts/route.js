@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
+import { getTeamScheduleMonth } from "@/lib/employee-profile";
 import { NextResponse } from "next/server";
 
 function checkAdminAuth(request) {
@@ -16,11 +17,20 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const employeeId = searchParams.get("employee_id");
-  if (!employeeId) {
-    return NextResponse.json({ error: "employee_id is required." }, { status: 400 });
-  }
+  const year = Number(searchParams.get("year"));
+  const month = Number(searchParams.get("month"));
 
   const db = createServiceClient();
+
+  if (Number.isInteger(year) && Number.isInteger(month) && month >= 0 && month <= 11) {
+    const shifts = await getTeamScheduleMonth(year, month, db);
+    return NextResponse.json({ shifts });
+  }
+
+  if (!employeeId) {
+    return NextResponse.json({ error: "employee_id or valid year/month is required." }, { status: 400 });
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await db
     .from("employee_shifts")

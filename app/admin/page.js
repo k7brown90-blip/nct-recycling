@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { WORK_CALENDAR_DAYS, WORK_CALENDAR_MONTHS, buildWorkCalendarGrid, getWorkCalendarDateString } from "@/lib/work-calendar";
 
 const STATUS_COLORS = {
   pending:     "bg-yellow-100 text-yellow-800",
@@ -12,7 +13,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Dashboard", "Employees", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
+const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -147,10 +148,6 @@ export default function AdminPage() {
   const [employees, setEmployees] = useState([]);
   const [employeeSaving, setEmployeeSaving] = useState(false);
   const [employeeInviteResendingId, setEmployeeInviteResendingId] = useState(null);
-  const [employeeShiftSavingId, setEmployeeShiftSavingId] = useState(null);
-  const [employeeShiftLoadingId, setEmployeeShiftLoadingId] = useState(null);
-  const [employeeShiftDeletingId, setEmployeeShiftDeletingId] = useState(null);
-  const [employeeShiftForm, setEmployeeShiftForm] = useState({});
   const [employeeForm, setEmployeeForm] = useState({
     email: "",
     display_name: "",
@@ -161,6 +158,21 @@ export default function AdminPage() {
     department: "",
     primary_location: "",
     employment_type: "hourly",
+  });
+  const [workCalendarYear, setWorkCalendarYear] = useState(new Date().getFullYear());
+  const [workCalendarMonth, setWorkCalendarMonth] = useState(new Date().getMonth());
+  const [selectedWorkDate, setSelectedWorkDate] = useState(new Date().toISOString().slice(0, 10));
+  const [workCalendarShifts, setWorkCalendarShifts] = useState([]);
+  const [workCalendarLoading, setWorkCalendarLoading] = useState(false);
+  const [workCalendarSaving, setWorkCalendarSaving] = useState(false);
+  const [workCalendarDeletingId, setWorkCalendarDeletingId] = useState(null);
+  const [workCalendarForm, setWorkCalendarForm] = useState({
+    employee_id: "",
+    start_time: "09:00",
+    end_time: "17:00",
+    role_label: "",
+    location_label: "",
+    notes: "",
   });
 
   // Applications state
@@ -310,22 +322,17 @@ export default function AdminPage() {
     setLoading(false);
   }, [secret]);
 
-  const fetchEmployeeShifts = useCallback(async (employeeId) => {
-    if (!employeeId) return;
-    setEmployeeShiftLoadingId(employeeId);
-    const res = await fetch(`/api/admin/employee-shifts?employee_id=${encodeURIComponent(employeeId)}`, { headers: authHeader });
+  const fetchWorkCalendar = useCallback(async () => {
+    setWorkCalendarLoading(true);
+    const res = await fetch(`/api/admin/employee-shifts?year=${workCalendarYear}&month=${workCalendarMonth}`, { headers: authHeader });
     const json = await res.json();
     if (res.ok) {
-      setEmployees((current) => current.map((employee) => (
-        employee.id === employeeId
-          ? { ...employee, upcoming_shifts: json.shifts || [] }
-          : employee
-      )));
+      setWorkCalendarShifts(json.shifts || []);
     } else {
       setMessage(`Error: ${json.error}`);
     }
-    setEmployeeShiftLoadingId(null);
-  }, [secret]);
+    setWorkCalendarLoading(false);
+  }, [secret, workCalendarYear, workCalendarMonth]);
 
   const fetchApplications = useCallback(async () => {
     setLoading(true);
@@ -522,6 +529,7 @@ export default function AdminPage() {
     setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
     if (section === "Dashboard") fetchDashboard();
     if (section === "Employees") fetchEmployees();
+    if (section === "Work Calendar") { fetchEmployees(); fetchWorkCalendar(); }
     if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
@@ -530,7 +538,11 @@ export default function AdminPage() {
     if (section === "Donation Lots") fetchLots();
     if (section === "Discard Accounts") fetchDiscardAccounts();
     if (section === "Emails") fetchEmailUsers();
-  }, [authed, section, fetchDashboard, fetchEmployees, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
+  }, [authed, section, fetchDashboard, fetchEmployees, fetchWorkCalendar, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
+
+  useEffect(() => {
+    setSelectedWorkDate(getWorkCalendarDateString(workCalendarYear, workCalendarMonth, 1));
+  }, [workCalendarYear, workCalendarMonth]);
 
   useEffect(() => {
     setEditingDiscard(false);
@@ -688,57 +700,43 @@ export default function AdminPage() {
     setEmployeeInviteResendingId(null);
   }
 
-  function toggleEmployeeScheduler(employeeId) {
-    setEmployeeForm((prev) => prev);
-    setEmployeeShiftForm((current) => {
-      if (current[employeeId]) {
-        const next = { ...current };
-        delete next[employeeId];
-        return next;
-      }
+  async function handleCreateCalendarShift() {
+    if (!selectedWorkDate || !workCalendarForm.employee_id) {
+      setMessage("Error: Choose a date and employee before saving a shift.");
+      return;
+    }
 
-      return {
-        ...current,
-        [employeeId]: {
-          shift_date: new Date().toISOString().slice(0, 10),
-          start_time: "09:00",
-          end_time: "17:00",
-          role_label: "",
-          location_label: "",
-          notes: "",
-        },
-      };
-    });
-    fetchEmployeeShifts(employeeId);
-  }
-
-  async function handleCreateEmployeeShift(employee) {
-    const form = employeeShiftForm[employee.id];
-    if (!employee?.id || !form) return;
-
-    setEmployeeShiftSavingId(employee.id);
+    setWorkCalendarSaving(true);
     setMessage("");
-
     const res = await fetch("/api/admin/employee-shifts", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({ employee_id: employee.id, ...form }),
+      body: JSON.stringify({
+        employee_id: workCalendarForm.employee_id,
+        shift_date: selectedWorkDate,
+        start_time: workCalendarForm.start_time,
+        end_time: workCalendarForm.end_time,
+        role_label: workCalendarForm.role_label,
+        location_label: workCalendarForm.location_label,
+        notes: workCalendarForm.notes,
+      }),
     });
     const json = await res.json();
 
     if (res.ok) {
-      setMessage(`✅ Shift scheduled for ${employee.display_name}.`);
-      await fetchEmployeeShifts(employee.id);
+      const selectedEmployee = employees.find((employee) => employee.id === workCalendarForm.employee_id);
+      setMessage(`✅ Shift scheduled for ${selectedEmployee?.display_name || "employee"}.`);
+      await fetchWorkCalendar();
     } else {
       setMessage(`Error: ${json.error}`);
     }
 
-    setEmployeeShiftSavingId(null);
+    setWorkCalendarSaving(false);
   }
 
-  async function handleCancelEmployeeShift(employeeId, shiftId) {
+  async function handleCancelCalendarShift(shiftId) {
     if (!shiftId) return;
-    setEmployeeShiftDeletingId(shiftId);
+    setWorkCalendarDeletingId(shiftId);
     setMessage("");
 
     const res = await fetch("/api/admin/employee-shifts", {
@@ -750,13 +748,23 @@ export default function AdminPage() {
 
     if (res.ok) {
       setMessage("✅ Shift cancelled.");
-      await fetchEmployeeShifts(employeeId);
+      await fetchWorkCalendar();
     } else {
       setMessage(`Error: ${json.error}`);
     }
 
-    setEmployeeShiftDeletingId(null);
+    setWorkCalendarDeletingId(null);
   }
+
+  function changeWorkCalendarMonth(direction) {
+    const nextDate = new Date(workCalendarYear, workCalendarMonth + direction, 1);
+    setWorkCalendarYear(nextDate.getFullYear());
+    setWorkCalendarMonth(nextDate.getMonth());
+  }
+
+  const workCalendarWeeks = buildWorkCalendarGrid(workCalendarYear, workCalendarMonth);
+  const selectedWorkDateShifts = workCalendarShifts.filter((shift) => shift.shift_date === selectedWorkDate);
+  const todayKey = new Date().toISOString().slice(0, 10);
 
   async function handleAction(status) {
     if (!selected) return;
@@ -1575,13 +1583,6 @@ export default function AdminPage() {
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${employee.employment_status === "active" ? "bg-green-100 text-green-700" : employee.employment_status === "pending_setup" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"}`}>
                           {employee.employment_status}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => toggleEmployeeScheduler(employee.id)}
-                          className="text-xs font-semibold text-nct-navy hover:text-nct-gold underline"
-                        >
-                          {employeeShiftForm[employee.id] ? "Hide Shift Scheduler" : "Schedule Shift"}
-                        </button>
                         {employee.work_email && (
                           <button
                             type="button"
@@ -1610,120 +1611,170 @@ export default function AdminPage() {
                         {formatAdminDateTime(employee.last_clock_event_at)}
                       </p>
                     </div>
-                    {employeeShiftForm[employee.id] && (
-                      <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <input
-                            type="date"
-                            value={employeeShiftForm[employee.id]?.shift_date || ""}
-                            onChange={(e) => setEmployeeShiftForm((current) => ({
-                              ...current,
-                              [employee.id]: { ...current[employee.id], shift_date: e.target.value },
-                            }))}
-                            className="border border-gray-300 rounded-lg px-3 py-2"
-                          />
-                          <input
-                            type="text"
-                            value={employeeShiftForm[employee.id]?.role_label || ""}
-                            onChange={(e) => setEmployeeShiftForm((current) => ({
-                              ...current,
-                              [employee.id]: { ...current[employee.id], role_label: e.target.value },
-                            }))}
-                            placeholder="Role label"
-                            className="border border-gray-300 rounded-lg px-3 py-2"
-                          />
-                          <input
-                            type="time"
-                            value={employeeShiftForm[employee.id]?.start_time || ""}
-                            onChange={(e) => setEmployeeShiftForm((current) => ({
-                              ...current,
-                              [employee.id]: { ...current[employee.id], start_time: e.target.value },
-                            }))}
-                            className="border border-gray-300 rounded-lg px-3 py-2"
-                          />
-                          <input
-                            type="time"
-                            value={employeeShiftForm[employee.id]?.end_time || ""}
-                            onChange={(e) => setEmployeeShiftForm((current) => ({
-                              ...current,
-                              [employee.id]: { ...current[employee.id], end_time: e.target.value },
-                            }))}
-                            className="border border-gray-300 rounded-lg px-3 py-2"
-                          />
-                          <input
-                            type="text"
-                            value={employeeShiftForm[employee.id]?.location_label || ""}
-                            onChange={(e) => setEmployeeShiftForm((current) => ({
-                              ...current,
-                              [employee.id]: { ...current[employee.id], location_label: e.target.value },
-                            }))}
-                            placeholder="Location"
-                            className="border border-gray-300 rounded-lg px-3 py-2"
-                          />
-                          <input
-                            type="text"
-                            value={employeeShiftForm[employee.id]?.notes || ""}
-                            onChange={(e) => setEmployeeShiftForm((current) => ({
-                              ...current,
-                              [employee.id]: { ...current[employee.id], notes: e.target.value },
-                            }))}
-                            placeholder="Shift notes"
-                            className="border border-gray-300 rounded-lg px-3 py-2"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleCreateEmployeeShift(employee)}
-                          disabled={employeeShiftSavingId === employee.id}
-                          className="bg-nct-navy text-white font-bold py-2.5 px-4 rounded-lg hover:bg-nct-navy-dark transition-colors disabled:opacity-50"
-                        >
-                          {employeeShiftSavingId === employee.id ? "Scheduling shift..." : "Assign Shift"}
-                        </button>
-
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm font-semibold text-nct-navy">Upcoming Assigned Shifts</p>
-                            <button
-                              type="button"
-                              onClick={() => fetchEmployeeShifts(employee.id)}
-                              className="text-xs text-gray-500 underline"
-                            >
-                              Refresh shifts
-                            </button>
-                          </div>
-                          {employeeShiftLoadingId === employee.id ? (
-                            <p className="text-sm text-gray-500">Loading shifts...</p>
-                          ) : !employee.upcoming_shifts || employee.upcoming_shifts.length === 0 ? (
-                            <p className="text-sm text-gray-500">No upcoming shifts scheduled yet.</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {employee.upcoming_shifts.map((shift) => (
-                                <div key={shift.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 p-3">
-                                  <div>
-                                    <p className="text-sm font-semibold text-nct-navy">{shift.role_label || employee.job_title || "Scheduled Shift"}</p>
-                                    <p className="text-sm text-gray-600 mt-0.5">{formatShiftTimeRange(shift.scheduled_start, shift.scheduled_end)}</p>
-                                    <p className="text-xs text-gray-500 mt-1">{shift.location_label || employee.primary_location || "NCT Recycling"}</p>
-                                    {shift.notes && <p className="text-xs text-gray-500 mt-1">{shift.notes}</p>}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCancelEmployeeShift(employee.id, shift.id)}
-                                    disabled={employeeShiftDeletingId === shift.id}
-                                    className="text-xs font-semibold text-red-700 underline disabled:opacity-50"
-                                  >
-                                    {employeeShiftDeletingId === shift.id ? "Cancelling..." : "Cancel"}
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
             )}
+          </section>
+        </div>
+      )}
+
+      {section === "Work Calendar" && (
+        <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+          <section className="bg-white border border-gray-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-nct-navy">Work Calendar</h2>
+                <p className="text-sm text-gray-500 mt-1">Click any day to assign a shift and review the team schedule.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => changeWorkCalendarMonth(-1)} className="px-3 py-1.5 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">Prev</button>
+                <p className="min-w-[150px] text-center text-sm font-semibold text-nct-navy">{WORK_CALENDAR_MONTHS[workCalendarMonth]} {workCalendarYear}</p>
+                <button type="button" onClick={() => changeWorkCalendarMonth(1)} className="px-3 py-1.5 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">Next</button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-2 mb-2">
+              {WORK_CALENDAR_DAYS.map((label) => (
+                <div key={label} className="text-xs font-semibold uppercase tracking-wide text-gray-400 px-2 py-1">{label}</div>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              {workCalendarWeeks.map((week, weekIndex) => (
+                <div key={`${workCalendarYear}-${workCalendarMonth}-week-${weekIndex}`} className="grid grid-cols-7 gap-2">
+                  {week.map((day, dayIndex) => {
+                    if (!day) {
+                      return <div key={`empty-${weekIndex}-${dayIndex}`} className="min-h-[108px] rounded-xl bg-gray-50 border border-transparent" />;
+                    }
+
+                    const dateKey = getWorkCalendarDateString(workCalendarYear, workCalendarMonth, day);
+                    const dayShifts = workCalendarShifts.filter((shift) => shift.shift_date === dateKey);
+                    const isSelected = selectedWorkDate === dateKey;
+                    const isToday = todayKey === dateKey;
+
+                    return (
+                      <button
+                        key={dateKey}
+                        type="button"
+                        onClick={() => setSelectedWorkDate(dateKey)}
+                        className={`min-h-[108px] rounded-xl border p-2 text-left transition-colors ${isSelected ? "border-nct-gold bg-yellow-50" : isToday ? "border-nct-navy bg-slate-50" : "border-gray-200 bg-white hover:border-nct-gold/60"}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-sm font-bold ${isSelected || isToday ? "text-nct-navy" : "text-gray-700"}`}>{day}</span>
+                          <span className="text-[11px] text-gray-400">{dayShifts.length ? `${dayShifts.length} shift${dayShifts.length === 1 ? "" : "s"}` : "Open"}</span>
+                        </div>
+                        <div className="space-y-1">
+                          {dayShifts.slice(0, 2).map((shift) => (
+                            <div key={shift.id} className="rounded-lg bg-slate-100 px-2 py-1">
+                              <p className="text-[11px] font-semibold text-nct-navy truncate">{shift.display_name}</p>
+                              <p className="text-[10px] text-gray-500 truncate">{shift.role_label || shift.job_title || "Shift"}</p>
+                            </div>
+                          ))}
+                          {dayShifts.length > 2 && <p className="text-[10px] text-gray-500">+{dayShifts.length - 2} more</p>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="bg-white border border-gray-200 rounded-2xl p-5 space-y-5">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-nct-gold mb-2">Selected Day</p>
+              <h2 className="text-lg font-bold text-nct-navy">{new Date(`${selectedWorkDate}T12:00:00`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</h2>
+              <p className="text-sm text-gray-500 mt-1">Choose an employee, set the shift time, and save it directly to the shared calendar.</p>
+            </div>
+
+            <div className="grid gap-3">
+              <select
+                value={workCalendarForm.employee_id}
+                onChange={(e) => setWorkCalendarForm((current) => ({ ...current, employee_id: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-4 py-2 bg-white"
+              >
+                <option value="">Select employee</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>{employee.display_name}</option>
+                ))}
+              </select>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="time"
+                  value={workCalendarForm.start_time}
+                  onChange={(e) => setWorkCalendarForm((current) => ({ ...current, start_time: e.target.value }))}
+                  className="border border-gray-300 rounded-lg px-4 py-2"
+                />
+                <input
+                  type="time"
+                  value={workCalendarForm.end_time}
+                  onChange={(e) => setWorkCalendarForm((current) => ({ ...current, end_time: e.target.value }))}
+                  className="border border-gray-300 rounded-lg px-4 py-2"
+                />
+              </div>
+              <input
+                type="text"
+                value={workCalendarForm.role_label}
+                onChange={(e) => setWorkCalendarForm((current) => ({ ...current, role_label: e.target.value }))}
+                placeholder="Role for this shift"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <input
+                type="text"
+                value={workCalendarForm.location_label}
+                onChange={(e) => setWorkCalendarForm((current) => ({ ...current, location_label: e.target.value }))}
+                placeholder="Location"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <textarea
+                value={workCalendarForm.notes}
+                onChange={(e) => setWorkCalendarForm((current) => ({ ...current, notes: e.target.value }))}
+                placeholder="Shift notes"
+                rows={3}
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <button
+                type="button"
+                onClick={handleCreateCalendarShift}
+                disabled={workCalendarSaving}
+                className="bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {workCalendarSaving ? "Saving shift..." : "Save Shift"}
+              </button>
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-nct-navy">Shifts On This Day</h3>
+                <button type="button" onClick={fetchWorkCalendar} className="text-xs text-gray-500 underline">Refresh</button>
+              </div>
+              {workCalendarLoading ? (
+                <p className="text-sm text-gray-500">Loading shifts...</p>
+              ) : selectedWorkDateShifts.length === 0 ? (
+                <p className="text-sm text-gray-500">No shifts assigned for this day yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedWorkDateShifts.map((shift) => (
+                    <div key={shift.id} className="rounded-xl border border-gray-200 p-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-nct-navy">{shift.display_name}</p>
+                        <p className="text-sm text-gray-600 mt-0.5">{formatShiftTimeRange(shift.scheduled_start, shift.scheduled_end)}</p>
+                        <p className="text-xs text-gray-500 mt-1">{shift.role_label || shift.job_title || "Scheduled Shift"} · {shift.location_label || "NCT Recycling"}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelCalendarShift(shift.id)}
+                        disabled={workCalendarDeletingId === shift.id}
+                        className="text-xs font-semibold text-red-700 underline disabled:opacity-50"
+                      >
+                        {workCalendarDeletingId === shift.id ? "Cancelling..." : "Cancel"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         </div>
       )}

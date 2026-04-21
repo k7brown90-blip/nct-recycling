@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import EmployeeWorkCalendar from "@/components/EmployeeWorkCalendar";
 import SignOutButton from "@/components/SignOutButton";
 
 function formatDateTime(value) {
@@ -37,7 +38,7 @@ function getClockStatus(employee, activeTimeEntry, openBreak) {
   };
 }
 
-export default function EmployeeDashboardClient({ employee, initialSnapshot }) {
+export default function EmployeeDashboardClient({ employee, initialSnapshot, initialCalendarMonth, initialCalendarShifts }) {
   const [state, setState] = useState(initialSnapshot);
   const [employeeState, setEmployeeState] = useState(employee);
   const [message, setMessage] = useState("");
@@ -207,7 +208,13 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot }) {
         </section>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+      <EmployeeWorkCalendar
+        employee={employeeState}
+        initialCalendarMonth={initialCalendarMonth}
+        initialCalendarShifts={initialCalendarShifts}
+      />
+
+      <div className="grid gap-6">
         <section className="bg-white border border-gray-200 rounded-2xl p-6">
           <h2 className="text-xl font-bold text-nct-navy mb-3">Recent Time Entries</h2>
           {state.recentEntries.length === 0 ? (
@@ -230,15 +237,6 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot }) {
               ))}
             </div>
           )}
-        </section>
-
-        <section className="bg-nct-navy text-white rounded-2xl p-6">
-          <h2 className="text-xl font-bold mb-3">Next Implementation Slice</h2>
-          <div className="space-y-3 text-sm text-slate-200">
-            <p>Admin shift creation and schedule editing.</p>
-            <p>Manual time entry submission and approval workflow.</p>
-            <p>Time-off and availability management.</p>
-          </div>
         </section>
       </div>
     </main>
