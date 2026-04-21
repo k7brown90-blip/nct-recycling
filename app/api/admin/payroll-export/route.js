@@ -14,6 +14,21 @@ function buildFileName(periodStart, periodEnd) {
   return `nct-payroll-${periodStart}-through-${periodEnd}.csv`;
 }
 
+async function rollbackPayrollBatch(batchId, timeEntryIds, db) {
+  if (timeEntryIds.length > 0) {
+    await db
+      .from("employee_time_entries")
+      .update({ payroll_batch_id: null })
+      .eq("payroll_batch_id", batchId)
+      .in("id", timeEntryIds);
+  }
+
+  await db
+    .from("payroll_export_batches")
+    .delete()
+    .eq("id", batchId);
+}
+
 export async function GET(request) {
   if (!checkAdminAuth(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -131,13 +146,21 @@ export async function POST(request) {
   }
 
   const timeEntryIds = payrollExport.entries.map((entry) => entry.id);
-  const { error: updateEntriesError } = await db
+  const { data: updatedEntries, error: updateEntriesError } = await db
     .from("employee_time_entries")
     .update({ payroll_batch_id: batch.id })
-    .in("id", timeEntryIds);
+    .in("id", timeEntryIds)
+    .is("payroll_batch_id", null)
+    .select("id");
 
   if (updateEntriesError) {
+    await rollbackPayrollBatch(batch.id, [], db);
     return NextResponse.json({ error: updateEntriesError.message }, { status: 500 });
+  }
+
+  if ((updatedEntries || []).length !== timeEntryIds.length) {
+    await rollbackPayrollBatch(batch.id, timeEntryIds, db);
+    return NextResponse.json({ error: "Some time entries were already exported by another batch. Refresh the payroll preview and try again." }, { status: 409 });
   }
 
   const payloadSummary = {
@@ -156,6 +179,7 @@ export async function POST(request) {
     .eq("id", batch.id);
 
   if (finalizeBatchError) {
+    await rollbackPayrollBatch(batch.id, timeEntryIds, db);
     return NextResponse.json({ error: finalizeBatchError.message }, { status: 500 });
   }
 
