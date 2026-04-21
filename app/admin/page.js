@@ -82,6 +82,10 @@ function formatShiftTimeRange(start, end) {
   return `${dateLabel} · ${startTime} - ${endTime}`;
 }
 
+function isTimeOffOnDate(entry, dateKey) {
+  return entry.starts_on <= dateKey && entry.ends_on >= dateKey;
+}
+
 function mapLegacyCoOpStatus(status) {
   if (status === "approved") return "active";
   if (status === "denied") return "denied";
@@ -163,14 +167,22 @@ export default function AdminPage() {
   const [workCalendarMonth, setWorkCalendarMonth] = useState(new Date().getMonth());
   const [selectedWorkDate, setSelectedWorkDate] = useState(new Date().toISOString().slice(0, 10));
   const [workCalendarShifts, setWorkCalendarShifts] = useState([]);
+  const [workCalendarTimeOffBlocks, setWorkCalendarTimeOffBlocks] = useState([]);
   const [workCalendarLoading, setWorkCalendarLoading] = useState(false);
   const [workCalendarSaving, setWorkCalendarSaving] = useState(false);
+  const [workCalendarTimeOffSaving, setWorkCalendarTimeOffSaving] = useState(false);
   const [workCalendarDeletingId, setWorkCalendarDeletingId] = useState(null);
   const [workCalendarForm, setWorkCalendarForm] = useState({
     employee_id: "",
     start_time: "09:00",
     end_time: "17:00",
     notes: "",
+  });
+  const [workCalendarTimeOffForm, setWorkCalendarTimeOffForm] = useState({
+    employee_id: "",
+    ends_on: new Date().toISOString().slice(0, 10),
+    reason: "",
+    admin_notes: "",
   });
   const [timeReviewEntries, setTimeReviewEntries] = useState([]);
   const [timeReviewFilter, setTimeReviewFilter] = useState("pending");
@@ -330,6 +342,7 @@ export default function AdminPage() {
     const json = await res.json();
     if (res.ok) {
       setWorkCalendarShifts(json.shifts || []);
+      setWorkCalendarTimeOffBlocks(json.timeOffBlocks || []);
     } else {
       setMessage(`Error: ${json.error}`);
     }
@@ -560,6 +573,10 @@ export default function AdminPage() {
   }, [workCalendarYear, workCalendarMonth]);
 
   useEffect(() => {
+    setWorkCalendarTimeOffForm((current) => ({ ...current, ends_on: selectedWorkDate }));
+  }, [selectedWorkDate]);
+
+  useEffect(() => {
     setEditingDiscard(false);
     setDiscardEdits({});
     if (selectedDiscard?.id) {
@@ -747,6 +764,39 @@ export default function AdminPage() {
     setWorkCalendarSaving(false);
   }
 
+  async function handleCreateTimeOffBlock() {
+    if (!selectedWorkDate || !workCalendarTimeOffForm.employee_id) {
+      setMessage("Error: Choose a date and employee before saving time off.");
+      return;
+    }
+
+    setWorkCalendarTimeOffSaving(true);
+    setMessage("");
+    const res = await fetch("/api/admin/employee-shifts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        entry_type: "time_off",
+        employee_id: workCalendarTimeOffForm.employee_id,
+        shift_date: selectedWorkDate,
+        ends_on: workCalendarTimeOffForm.ends_on,
+        reason: workCalendarTimeOffForm.reason,
+        admin_notes: workCalendarTimeOffForm.admin_notes,
+      }),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      const selectedEmployee = employees.find((employee) => employee.id === workCalendarTimeOffForm.employee_id);
+      setMessage(`✅ Time off blocked for ${selectedEmployee?.display_name || "employee"}.`);
+      await fetchWorkCalendar();
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+
+    setWorkCalendarTimeOffSaving(false);
+  }
+
   async function handleCancelCalendarShift(shiftId) {
     if (!shiftId) return;
     setWorkCalendarDeletingId(shiftId);
@@ -761,6 +811,28 @@ export default function AdminPage() {
 
     if (res.ok) {
       setMessage("✅ Shift cancelled.");
+      await fetchWorkCalendar();
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+
+    setWorkCalendarDeletingId(null);
+  }
+
+  async function handleCancelTimeOffBlock(timeOffId) {
+    if (!timeOffId) return;
+    setWorkCalendarDeletingId(timeOffId);
+    setMessage("");
+
+    const res = await fetch("/api/admin/employee-shifts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ time_off_id: timeOffId }),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      setMessage("✅ Time off block removed.");
       await fetchWorkCalendar();
     } else {
       setMessage(`Error: ${json.error}`);
@@ -799,6 +871,7 @@ export default function AdminPage() {
 
   const workCalendarWeeks = buildWorkCalendarGrid(workCalendarYear, workCalendarMonth);
   const selectedWorkDateShifts = workCalendarShifts.filter((shift) => shift.shift_date === selectedWorkDate);
+  const selectedWorkDateTimeOffBlocks = workCalendarTimeOffBlocks.filter((entry) => isTimeOffOnDate(entry, selectedWorkDate));
   const todayKey = new Date().toISOString().slice(0, 10);
 
   async function handleAction(status) {
@@ -1685,6 +1758,7 @@ export default function AdminPage() {
 
                     const dateKey = getWorkCalendarDateString(workCalendarYear, workCalendarMonth, day);
                     const dayShifts = workCalendarShifts.filter((shift) => shift.shift_date === dateKey);
+                    const dayTimeOffBlocks = workCalendarTimeOffBlocks.filter((entry) => isTimeOffOnDate(entry, dateKey));
                     const isSelected = selectedWorkDate === dateKey;
                     const isToday = todayKey === dateKey;
 
@@ -1697,16 +1771,22 @@ export default function AdminPage() {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <span className={`text-sm font-bold ${isSelected || isToday ? "text-nct-navy" : "text-gray-700"}`}>{day}</span>
-                          <span className="text-[11px] text-gray-400">{dayShifts.length ? `${dayShifts.length} shift${dayShifts.length === 1 ? "" : "s"}` : "Open"}</span>
+                          <span className="text-[11px] text-gray-400">{dayTimeOffBlocks.length ? `${dayTimeOffBlocks.length} out` : dayShifts.length ? `${dayShifts.length} shift${dayShifts.length === 1 ? "" : "s"}` : "Open"}</span>
                         </div>
                         <div className="space-y-1">
+                          {dayTimeOffBlocks.slice(0, 1).map((entry) => (
+                            <div key={entry.id} className="rounded-lg bg-rose-50 px-2 py-1">
+                              <p className="text-[11px] font-semibold text-rose-700 truncate">{entry.display_name}</p>
+                              <p className="text-[10px] text-rose-600 truncate">Time off</p>
+                            </div>
+                          ))}
                           {dayShifts.slice(0, 2).map((shift) => (
                             <div key={shift.id} className="rounded-lg bg-slate-100 px-2 py-1">
                               <p className="text-[11px] font-semibold text-nct-navy truncate">{shift.display_name}</p>
                               <p className="text-[10px] text-gray-500 truncate">{new Date(shift.scheduled_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</p>
                             </div>
                           ))}
-                          {dayShifts.length > 2 && <p className="text-[10px] text-gray-500">+{dayShifts.length - 2} more</p>}
+                          {(dayShifts.length + dayTimeOffBlocks.length) > 2 && <p className="text-[10px] text-gray-500">+{(dayShifts.length + dayTimeOffBlocks.length) - 2} more</p>}
                         </div>
                       </button>
                     );
@@ -1720,10 +1800,11 @@ export default function AdminPage() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-nct-gold mb-2">Selected Day</p>
               <h2 className="text-lg font-bold text-nct-navy">{new Date(`${selectedWorkDate}T12:00:00`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</h2>
-              <p className="text-sm text-gray-500 mt-1">Choose an employee, set the shift time, and save it directly to the shared calendar.</p>
+              <p className="text-sm text-gray-500 mt-1">Assign shifts or add time-off reminders directly inside the shared calendar.</p>
             </div>
 
             <div className="grid gap-3">
+              <p className="text-sm font-semibold text-nct-navy">Assign Shift</p>
               <select
                 value={workCalendarForm.employee_id}
                 onChange={(e) => setWorkCalendarForm((current) => ({ ...current, employee_id: e.target.value }))}
@@ -1765,7 +1846,79 @@ export default function AdminPage() {
               </button>
             </div>
 
+            <div className="grid gap-3 pt-4 border-t border-gray-100">
+              <p className="text-sm font-semibold text-rose-700">Block Time Off</p>
+              <select
+                value={workCalendarTimeOffForm.employee_id}
+                onChange={(e) => setWorkCalendarTimeOffForm((current) => ({ ...current, employee_id: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-4 py-2 bg-white"
+              >
+                <option value="">Select employee</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>{employee.display_name}</option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={workCalendarTimeOffForm.ends_on}
+                onChange={(e) => setWorkCalendarTimeOffForm((current) => ({ ...current, ends_on: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <input
+                type="text"
+                value={workCalendarTimeOffForm.reason}
+                onChange={(e) => setWorkCalendarTimeOffForm((current) => ({ ...current, reason: e.target.value }))}
+                placeholder="Reason, for example Vacation"
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <textarea
+                value={workCalendarTimeOffForm.admin_notes}
+                onChange={(e) => setWorkCalendarTimeOffForm((current) => ({ ...current, admin_notes: e.target.value }))}
+                placeholder="Optional admin notes"
+                rows={3}
+                className="border border-gray-300 rounded-lg px-4 py-2"
+              />
+              <button
+                type="button"
+                onClick={handleCreateTimeOffBlock}
+                disabled={workCalendarTimeOffSaving}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {workCalendarTimeOffSaving ? "Saving time off..." : "Save Time Off Block"}
+              </button>
+            </div>
+
             <div className="border-t border-gray-100 pt-4">
+              <div className="mb-4">
+                <h3 className="text-sm font-bold text-rose-700 mb-3">Time Off On This Day</h3>
+                {workCalendarLoading ? (
+                  <p className="text-sm text-gray-500">Loading time off...</p>
+                ) : selectedWorkDateTimeOffBlocks.length === 0 ? (
+                  <p className="text-sm text-gray-500">No time off blocks on this day.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedWorkDateTimeOffBlocks.map((entry) => (
+                      <div key={entry.id} className="rounded-xl border border-rose-100 p-3 flex items-start justify-between gap-3 bg-rose-50/40">
+                        <div>
+                          <p className="text-sm font-semibold text-rose-700">{entry.display_name}</p>
+                          <p className="text-sm text-gray-600 mt-0.5">Out of office</p>
+                          {entry.job_title && <p className="text-xs text-gray-500 mt-1">{entry.job_title}</p>}
+                          {entry.reason && <p className="text-xs text-gray-500 mt-1">{entry.reason}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCancelTimeOffBlock(entry.id)}
+                          disabled={workCalendarDeletingId === entry.id}
+                          className="text-xs font-semibold text-red-700 underline disabled:opacity-50"
+                        >
+                          {workCalendarDeletingId === entry.id ? "Removing..." : "Remove"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold text-nct-navy">Shifts On This Day</h3>
                 <button type="button" onClick={fetchWorkCalendar} className="text-xs text-gray-500 underline">Refresh</button>

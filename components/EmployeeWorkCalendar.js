@@ -7,9 +7,14 @@ function formatCalendarShiftWindow(shift) {
   return `${new Date(shift.scheduled_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} - ${new Date(shift.scheduled_end).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
 }
 
-export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, initialCalendarShifts }) {
+function isTimeOffOnDate(entry, dateKey) {
+  return entry.starts_on <= dateKey && entry.ends_on >= dateKey;
+}
+
+export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, initialCalendarData }) {
   const [calendarMonth, setCalendarMonth] = useState(initialCalendarMonth);
-  const [calendarShifts, setCalendarShifts] = useState(initialCalendarShifts || []);
+  const [calendarShifts, setCalendarShifts] = useState(initialCalendarData?.shifts || []);
+  const [calendarTimeOffBlocks, setCalendarTimeOffBlocks] = useState(initialCalendarData?.timeOffBlocks || []);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(
     getWorkCalendarDateString(initialCalendarMonth.year, initialCalendarMonth.month, new Date().getMonth() === initialCalendarMonth.month && new Date().getFullYear() === initialCalendarMonth.year ? new Date().getDate() : 1)
@@ -25,6 +30,7 @@ export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, i
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
       setCalendarShifts(json.shifts || []);
+      setCalendarTimeOffBlocks(json.timeOffBlocks || []);
     }
     setCalendarLoading(false);
   }
@@ -38,6 +44,7 @@ export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, i
 
   const weeks = buildWorkCalendarGrid(calendarMonth.year, calendarMonth.month);
   const selectedDateShifts = calendarShifts.filter((shift) => shift.shift_date === selectedDate);
+  const selectedDateTimeOffBlocks = calendarTimeOffBlocks.filter((entry) => isTimeOffOnDate(entry, selectedDate));
   const todayKey = new Date().toISOString().slice(0, 10);
 
   return (
@@ -71,29 +78,37 @@ export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, i
 
                   const dateKey = getWorkCalendarDateString(calendarMonth.year, calendarMonth.month, day);
                   const dayShifts = calendarShifts.filter((shift) => shift.shift_date === dateKey);
+                  const dayTimeOffBlocks = calendarTimeOffBlocks.filter((entry) => isTimeOffOnDate(entry, dateKey));
                   const isSelected = selectedDate === dateKey;
                   const isToday = todayKey === dateKey;
                   const ownShift = dayShifts.some((shift) => shift.employee_id === employee?.id);
+                  const ownTimeOff = dayTimeOffBlocks.some((entry) => entry.employee_id === employee?.id);
 
                   return (
                     <button
                       key={dateKey}
                       type="button"
                       onClick={() => setSelectedDate(dateKey)}
-                      className={`min-h-[104px] rounded-xl border p-2 text-left transition-colors ${isSelected ? "border-nct-gold bg-yellow-50" : ownShift ? "border-blue-200 bg-blue-50" : isToday ? "border-nct-navy bg-slate-50" : "border-gray-200 bg-white hover:border-nct-gold/60"}`}
+                      className={`min-h-[104px] rounded-xl border p-2 text-left transition-colors ${isSelected ? "border-nct-gold bg-yellow-50" : ownTimeOff ? "border-rose-200 bg-rose-50" : ownShift ? "border-blue-200 bg-blue-50" : isToday ? "border-nct-navy bg-slate-50" : "border-gray-200 bg-white hover:border-nct-gold/60"}`}
                     >
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-bold text-nct-navy">{day}</span>
-                        <span className="text-[11px] text-gray-400">{dayShifts.length || "Open"}</span>
+                        <span className="text-[11px] text-gray-400">{dayTimeOffBlocks.length ? `${dayTimeOffBlocks.length} out` : dayShifts.length || "Open"}</span>
                       </div>
                       <div className="space-y-1">
+                        {dayTimeOffBlocks.slice(0, 1).map((entry) => (
+                          <div key={entry.id} className={`rounded-lg px-2 py-1 ${entry.employee_id === employee?.id ? "bg-rose-100" : "bg-rose-50"}`}>
+                            <p className="text-[11px] font-semibold text-rose-700 truncate">{entry.display_name}</p>
+                            <p className="text-[10px] text-rose-600 truncate">Time off</p>
+                          </div>
+                        ))}
                         {dayShifts.slice(0, 2).map((shift) => (
                           <div key={shift.id} className={`rounded-lg px-2 py-1 ${shift.employee_id === employee?.id ? "bg-blue-100" : "bg-slate-100"}`}>
                             <p className="text-[11px] font-semibold text-nct-navy truncate">{shift.display_name}</p>
                             <p className="text-[10px] text-gray-500 truncate">{formatCalendarShiftWindow(shift)}</p>
                           </div>
                         ))}
-                        {dayShifts.length > 2 && <p className="text-[10px] text-gray-500">+{dayShifts.length - 2} more</p>}
+                        {(dayShifts.length + dayTimeOffBlocks.length) > 2 && <p className="text-[10px] text-gray-500">+{(dayShifts.length + dayTimeOffBlocks.length) - 2} more</p>}
                       </div>
                     </button>
                   );
@@ -112,10 +127,24 @@ export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, i
             {calendarLoading && <span className="text-xs text-gray-500">Loading...</span>}
           </div>
 
-          {selectedDateShifts.length === 0 ? (
-            <p className="text-sm text-gray-500">No shifts are assigned for this day yet.</p>
+          {selectedDateShifts.length === 0 && selectedDateTimeOffBlocks.length === 0 ? (
+            <p className="text-sm text-gray-500">No shifts or time-off reminders are on this day yet.</p>
           ) : (
             <div className="space-y-3">
+              {selectedDateTimeOffBlocks.map((entry) => (
+                <div key={entry.id} className={`rounded-xl border p-3 ${entry.employee_id === employee?.id ? "border-rose-200 bg-white" : "border-rose-100 bg-white"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-rose-700">{entry.display_name}</p>
+                      <p className="text-sm text-gray-600 mt-0.5">Out of office</p>
+                    </div>
+                    {entry.employee_id === employee?.id && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">Your time off</span>
+                    )}
+                  </div>
+                  {entry.reason && <p className="text-xs text-gray-500 mt-2">{entry.reason}</p>}
+                </div>
+              ))}
               {selectedDateShifts.map((shift) => (
                 <div key={shift.id} className={`rounded-xl border p-3 ${shift.employee_id === employee?.id ? "border-blue-200 bg-white" : "border-gray-200 bg-white"}`}>
                   <div className="flex items-start justify-between gap-3">

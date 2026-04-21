@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
 import { getOrCreateProfile } from "@/lib/auth-profile";
-import { getTeamScheduleMonth } from "@/lib/employee-profile";
+import { getTeamCalendarMonth } from "@/lib/employee-profile";
 import { NextResponse } from "next/server";
 
 export async function GET(request) {
@@ -28,6 +28,6 @@ export async function GET(request) {
     return NextResponse.json({ error: "Valid year and month are required." }, { status: 400 });
   }
 
-  const shifts = await getTeamScheduleMonth(year, month, db);
-  return NextResponse.json({ shifts });
+  const calendarData = await getTeamCalendarMonth(year, month, db);
+  return NextResponse.json(calendarData);
 }

@@ -38,7 +38,7 @@ function getClockStatus(employee, activeTimeEntry, openBreak) {
   };
 }
 
-export default function EmployeeDashboardClient({ employee, initialSnapshot, initialCalendarMonth, initialCalendarShifts }) {
+export default function EmployeeDashboardClient({ employee, initialSnapshot, initialCalendarMonth, initialCalendarData }) {
   const [state, setState] = useState(initialSnapshot);
   const [employeeState, setEmployeeState] = useState(employee);
   const [message, setMessage] = useState("");
@@ -283,7 +283,7 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
       <EmployeeWorkCalendar
         employee={employeeState}
         initialCalendarMonth={initialCalendarMonth}
-        initialCalendarShifts={initialCalendarShifts}
+        initialCalendarData={initialCalendarData}
       />
 
       <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">

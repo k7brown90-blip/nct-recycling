@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
-import { getTeamScheduleMonth } from "@/lib/employee-profile";
+import { getTeamCalendarMonth } from "@/lib/employee-profile";
 import { NextResponse } from "next/server";
 
 function checkAdminAuth(request) {
@@ -23,8 +23,8 @@ export async function GET(request) {
   const db = createServiceClient();
 
   if (Number.isInteger(year) && Number.isInteger(month) && month >= 0 && month <= 11) {
-    const shifts = await getTeamScheduleMonth(year, month, db);
-    return NextResponse.json({ shifts });
+    const calendarData = await getTeamCalendarMonth(year, month, db);
+    return NextResponse.json(calendarData);
   }
 
   if (!employeeId) {
@@ -54,12 +54,47 @@ export async function POST(request) {
   }
 
   const {
+    entry_type,
     employee_id,
     shift_date,
     start_time,
     end_time,
+    ends_on,
+    reason,
+    admin_notes,
     notes,
   } = await request.json();
+
+  if (entry_type === "time_off") {
+    if (!employee_id || !shift_date || !ends_on) {
+      return NextResponse.json({ error: "employee_id, start date, and end date are required for time off." }, { status: 400 });
+    }
+    if (new Date(`${ends_on}T12:00:00`).getTime() < new Date(`${shift_date}T12:00:00`).getTime()) {
+      return NextResponse.json({ error: "Time-off end date must be on or after the start date." }, { status: 400 });
+    }
+
+    const db = createServiceClient();
+    const { data, error } = await db
+      .from("employee_time_off_requests")
+      .insert({
+        employee_id,
+        request_type: "time_off",
+        status: "approved",
+        starts_on: shift_date,
+        ends_on,
+        reason: reason || "Admin scheduled time off",
+        admin_notes: admin_notes || null,
+        reviewed_at: new Date().toISOString(),
+      })
+      .select("id, employee_id, starts_on, ends_on, status, reason, admin_notes")
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, timeOffBlock: data });
+  }
 
   if (!employee_id || !shift_date || !start_time || !end_time) {
     return NextResponse.json({ error: "employee_id, shift_date, start_time, and end_time are required." }, { status: 400 });
@@ -99,12 +134,26 @@ export async function DELETE(request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { shift_id } = await request.json();
-  if (!shift_id) {
-    return NextResponse.json({ error: "shift_id is required." }, { status: 400 });
+  const { shift_id, time_off_id } = await request.json();
+  if (!shift_id && !time_off_id) {
+    return NextResponse.json({ error: "shift_id or time_off_id is required." }, { status: 400 });
   }
 
   const db = createServiceClient();
+
+  if (time_off_id) {
+    const { error } = await db
+      .from("employee_time_off_requests")
+      .update({ status: "cancelled" })
+      .eq("id", time_off_id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  }
+
   const { error } = await db
     .from("employee_shifts")
     .update({ status: "cancelled" })
