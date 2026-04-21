@@ -44,5 +44,28 @@ export async function POST(request) {
     return NextResponse.json({ error: updateError.message || "Failed to update password." }, { status: 500 });
   }
 
+  if (clear_setup_required) {
+    const { data: employeeProfile, error: employeeLookupError } = await adminClient
+      .from("employee_profiles")
+      .select("id, employment_status")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    if (employeeLookupError) {
+      return NextResponse.json({ error: employeeLookupError.message || "Failed to look up employee profile." }, { status: 500 });
+    }
+
+    if (employeeProfile?.id && employeeProfile.employment_status === "pending_setup") {
+      const { error: employeeUpdateError } = await adminClient
+        .from("employee_profiles")
+        .update({ employment_status: "active" })
+        .eq("id", employeeProfile.id);
+
+      if (employeeUpdateError) {
+        return NextResponse.json({ error: employeeUpdateError.message || "Failed to activate employee profile." }, { status: 500 });
+      }
+    }
+  }
+
   return NextResponse.json({ success: true, email: user.email || null });
 }

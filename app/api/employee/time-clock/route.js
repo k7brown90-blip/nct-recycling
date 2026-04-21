@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import { createServiceClient } from "@/lib/supabase";
 import { getOrCreateProfile } from "@/lib/auth-profile";
-import { getEmployeeDashboardSnapshot, getEmployeeProfileByUserId } from "@/lib/employee-profile";
+import { activateEmployeeProfileByUserId, getEmployeeDashboardSnapshot } from "@/lib/employee-profile";
 import { NextResponse } from "next/server";
 
 const VALID_ACTIONS = new Set(["clock_in", "break_start", "break_end", "clock_out"]);
@@ -18,7 +18,7 @@ async function getEmployeeContext() {
   const profile = await getOrCreateProfile(user, db);
   if (profile?.role !== "employee") return null;
 
-  const employee = await getEmployeeProfileByUserId(user.id, db);
+  const employee = await activateEmployeeProfileByUserId(user.id, db);
   if (!employee?.id) return null;
 
   return { user, employee, db };

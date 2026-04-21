@@ -49,6 +49,21 @@ function formatAccountTypeLabel(programType, accountType) {
   return accountType;
 }
 
+function formatAdminDateTime(value) {
+  if (!value) return "No activity yet";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatClockEventLabel(value) {
+  if (!value) return "Awaiting activity";
+  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function mapLegacyCoOpStatus(status) {
   if (status === "approved") return "active";
   if (status === "denied") return "denied";
@@ -1469,6 +1484,16 @@ export default function AdminPage() {
                       <p>{employee.department || "No department"}</p>
                       <p>{employee.primary_location || "No location"}</p>
                       <p>{employee.employment_type || "hourly"}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mt-3 pt-3 border-t border-gray-100">
+                      <p>
+                        <span className="text-gray-400">Last portal activity:</span>{" "}
+                        {formatClockEventLabel(employee.last_clock_event_type)}
+                      </p>
+                      <p>
+                        <span className="text-gray-400">Activity time:</span>{" "}
+                        {formatAdminDateTime(employee.last_clock_event_at)}
+                      </p>
                     </div>
                   </div>
                 ))}
