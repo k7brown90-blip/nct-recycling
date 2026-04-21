@@ -114,6 +114,7 @@ export default function AdminPage() {
   // Employee state
   const [employees, setEmployees] = useState([]);
   const [employeeSaving, setEmployeeSaving] = useState(false);
+  const [employeeInviteResendingId, setEmployeeInviteResendingId] = useState(null);
   const [employeeForm, setEmployeeForm] = useState({
     email: "",
     display_name: "",
@@ -611,6 +612,27 @@ export default function AdminPage() {
       setMessage(`Error: ${json.error}`);
     }
     setEmployeeSaving(false);
+  }
+
+  async function handleResendEmployeeInvite(employee) {
+    if (!employee?.id) return;
+    setEmployeeInviteResendingId(employee.id);
+    setMessage("");
+
+    const res = await fetch("/api/admin/employees", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ employee_id: employee.id }),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      setMessage(`✅ Fresh employee invite sent to ${employee.work_email}.`);
+    } else {
+      setMessage(`Error: ${json.error}`);
+    }
+
+    setEmployeeInviteResendingId(null);
   }
 
   async function handleAction(status) {
@@ -1426,9 +1448,21 @@ export default function AdminPage() {
                         <p className="font-semibold text-nct-navy">{employee.display_name}</p>
                         <p className="text-sm text-gray-500 mt-0.5">{employee.work_email || "No email"}</p>
                       </div>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${employee.employment_status === "active" ? "bg-green-100 text-green-700" : employee.employment_status === "pending_setup" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"}`}>
-                        {employee.employment_status}
-                      </span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${employee.employment_status === "active" ? "bg-green-100 text-green-700" : employee.employment_status === "pending_setup" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"}`}>
+                          {employee.employment_status}
+                        </span>
+                        {employee.work_email && (
+                          <button
+                            type="button"
+                            onClick={() => handleResendEmployeeInvite(employee)}
+                            disabled={employeeInviteResendingId === employee.id}
+                            className="text-xs font-semibold text-nct-navy hover:text-nct-gold underline disabled:opacity-50"
+                          >
+                            {employeeInviteResendingId === employee.id ? "Sending fresh invite..." : "Send Fresh Invite"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mt-3">
                       <p>{employee.job_title || "No title assigned"}</p>
