@@ -52,6 +52,7 @@ function UpdatePasswordForm() {
   const [verificationIssue, setVerificationIssue] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const [resolvedSession, setResolvedSession] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
@@ -61,10 +62,11 @@ function UpdatePasswordForm() {
     setLinkError("");
     setVerificationIssue("");
 
-    function markReady() {
+    function markReady(session = null) {
       if (!settled) {
         settled = true;
         setSessionReady(true);
+        setResolvedSession(session);
         setVerificationIssue("");
         setLinkError("");
       }
@@ -87,14 +89,14 @@ function UpdatePasswordForm() {
     // Register listener first — catches SIGNED_IN / PASSWORD_RECOVERY events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") && session) {
-        markReady();
+        markReady(session);
       }
     });
 
     async function init() {
       try {
         const session = await resolveRecoverySession(supabase);
-        if (session) { markReady(); return; }
+        if (session) { markReady(session); return; }
 
         // 4. Nothing worked — timeout will trigger the error state
       } catch (err) {
@@ -135,23 +137,35 @@ function UpdatePasswordForm() {
     }
 
     setLoading(true);
-    const session = await resolveRecoverySession(supabase).catch(() => null);
+    const session = resolvedSession || await resolveRecoverySession(supabase).catch(() => null);
     if (!session) {
       setError("Failed to verify your reset session. Please reopen the invite link and try again.");
       setLoading(false);
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ password });
+    const res = await fetch("/api/auth/update-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_token: session.access_token,
+        password,
+        clear_setup_required: isWelcome,
+      }),
+    });
 
-    if (error) {
-      setError("Failed to update password. The link may have expired.");
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(json.error || "Failed to update password. The link may have expired.");
       setLoading(false);
       return;
     }
 
-    if (isWelcome) {
-      await supabase.auth.updateUser({ data: { setup_required: false } });
+    if (session.access_token && session.refresh_token) {
+      await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
     }
 
     router.push("/dashboard");
