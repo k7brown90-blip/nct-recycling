@@ -63,6 +63,47 @@ async function getOpenBreak(timeEntryId, db) {
   return data || null;
 }
 
+async function getAssignedShiftForClockIn(employeeId, shiftId, currentDate, db) {
+  const { data: shift, error: shiftError } = await db
+    .from("employee_shifts")
+    .select("id, shift_date, scheduled_start, scheduled_end, status, notes")
+    .eq("id", shiftId)
+    .eq("employee_id", employeeId)
+    .maybeSingle();
+
+  if (shiftError) {
+    throw new Error(`Assigned shift lookup failed: ${shiftError.message}`);
+  }
+
+  if (!shift) {
+    return { error: "You can only clock into a shift assigned to you." };
+  }
+  if (shift.shift_date !== currentDate) {
+    return { error: "You can only clock into a shift scheduled for today." };
+  }
+  if (!["draft", "scheduled", "confirmed"].includes(shift.status)) {
+    return { error: "This shift is not available for clock in." };
+  }
+
+  const { data: existingEntry, error: existingEntryError } = await db
+    .from("employee_time_entries")
+    .select("id")
+    .eq("employee_id", employeeId)
+    .eq("shift_id", shift.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingEntryError) {
+    throw new Error(`Shift entry lookup failed: ${existingEntryError.message}`);
+  }
+
+  if (existingEntry?.id) {
+    return { error: "A time entry already exists for this assigned shift." };
+  }
+
+  return { shift };
+}
+
 async function setEmployeeClockMarker(employeeId, eventType, eventAt, db) {
   const { error } = await db
     .from("employee_profiles")
@@ -96,7 +137,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { action } = await request.json();
+  const { action, shift_id } = await request.json();
   if (!action) {
     return NextResponse.json({ error: "Action is required." }, { status: 400 });
   }
@@ -106,6 +147,7 @@ export async function POST(request) {
 
   const { user, employee, db } = context;
   const now = new Date().toISOString();
+  const today = now.slice(0, 10);
   const activeEntry = await getActiveEntry(employee.id, db);
 
   if (action === "clock_in") {
@@ -113,8 +155,18 @@ export async function POST(request) {
       return NextResponse.json({ error: "You are already clocked in." }, { status: 409 });
     }
 
+    if (!shift_id) {
+      return NextResponse.json({ error: "Select your assigned shift before clocking in." }, { status: 400 });
+    }
+
+    const assignedShift = await getAssignedShiftForClockIn(employee.id, shift_id, today, db);
+    if (assignedShift.error) {
+      return NextResponse.json({ error: assignedShift.error }, { status: 409 });
+    }
+
     const { error } = await db.from("employee_time_entries").insert({
       employee_id: employee.id,
+      shift_id: assignedShift.shift.id,
       entry_source: "clock",
       approval_status: "pending",
       started_at: now,

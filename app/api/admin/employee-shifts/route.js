@@ -34,7 +34,7 @@ export async function GET(request) {
   const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await db
     .from("employee_shifts")
-    .select("id, employee_id, shift_date, scheduled_start, scheduled_end, status, role_label, location_label, notes, created_at")
+    .select("id, employee_id, shift_date, scheduled_start, scheduled_end, status, notes, created_at")
     .eq("employee_id", employeeId)
     .gte("shift_date", today)
     .in("status", ["draft", "scheduled", "confirmed"])
@@ -58,8 +58,6 @@ export async function POST(request) {
     shift_date,
     start_time,
     end_time,
-    role_label,
-    location_label,
     notes,
   } = await request.json();
 
@@ -84,11 +82,9 @@ export async function POST(request) {
       scheduled_start: scheduledStart,
       scheduled_end: scheduledEnd,
       status: "scheduled",
-      role_label: role_label || null,
-      location_label: location_label || null,
       notes: notes || null,
     })
-    .select("id, employee_id, shift_date, scheduled_start, scheduled_end, status, role_label, location_label, notes")
+    .select("id, employee_id, shift_date, scheduled_start, scheduled_end, status, notes")
     .maybeSingle();
 
   if (error) {

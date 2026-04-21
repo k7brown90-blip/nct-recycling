@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import EmployeeWorkCalendar from "@/components/EmployeeWorkCalendar";
 import SignOutButton from "@/components/SignOutButton";
 
@@ -44,8 +44,20 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState(null);
+  const [selectedShiftId, setSelectedShiftId] = useState(initialSnapshot.clockableShifts?.[0]?.id || "");
 
   const clockStatus = getClockStatus(employeeState, state.activeTimeEntry, state.openBreak);
+
+  useEffect(() => {
+    if (!state.clockableShifts?.length) {
+      setSelectedShiftId("");
+      return;
+    }
+
+    if (!state.clockableShifts.some((shift) => shift.id === selectedShiftId)) {
+      setSelectedShiftId(state.clockableShifts[0].id);
+    }
+  }, [state.clockableShifts, selectedShiftId]);
 
   async function runClockAction(action) {
     setBusyAction(action);
@@ -55,7 +67,7 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
     const res = await fetch("/api/employee/time-clock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, shift_id: action === "clock_in" ? selectedShiftId : undefined }),
     });
     const json = await res.json().catch(() => ({}));
 
@@ -69,6 +81,7 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
     setState({
       activeTimeEntry: json.activeTimeEntry || null,
       openBreak: json.openBreak || null,
+      clockableShifts: json.clockableShifts || [],
       upcomingShifts: json.upcomingShifts || [],
       recentEntries: json.recentEntries || [],
     });
@@ -138,14 +151,29 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
 
           <div className="grid gap-3 sm:grid-cols-2">
             {!state.activeTimeEntry ? (
-              <button
-                type="button"
-                onClick={() => runClockAction("clock_in")}
-                disabled={busyAction !== null}
-                className="bg-nct-navy hover:opacity-90 text-white font-bold py-3 rounded-xl transition-opacity disabled:opacity-50"
-              >
-                {busyAction === "clock_in" ? "Clocking in..." : "Clock In"}
-              </button>
+              <>
+                <select
+                  value={selectedShiftId}
+                  onChange={(e) => setSelectedShiftId(e.target.value)}
+                  disabled={busyAction !== null || state.clockableShifts.length === 0}
+                  className="border border-gray-300 rounded-xl px-4 py-3 bg-white text-nct-navy disabled:bg-gray-100 disabled:text-gray-400"
+                >
+                  <option value="">Select assigned shift</option>
+                  {state.clockableShifts.map((shift) => (
+                    <option key={shift.id} value={shift.id}>
+                      {formatShiftWindow(shift)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => runClockAction("clock_in")}
+                  disabled={busyAction !== null || !selectedShiftId}
+                  className="bg-nct-navy hover:opacity-90 text-white font-bold py-3 rounded-xl transition-opacity disabled:opacity-50"
+                >
+                  {busyAction === "clock_in" ? "Clocking in..." : "Clock In To Assigned Shift"}
+                </button>
+              </>
             ) : (
               <>
                 <button
@@ -169,6 +197,12 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
               </>
             )}
           </div>
+
+          {!state.activeTimeEntry && state.clockableShifts.length === 0 && (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3 mt-4">
+              You can only clock in when you have an assigned shift for today.
+            </p>
+          )}
 
           <div className="mt-5 grid gap-3 md:grid-cols-2 text-sm text-gray-700">
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
@@ -194,10 +228,9 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
             <div className="space-y-3">
               {state.upcomingShifts.map((shift) => (
                 <div key={shift.id} className="rounded-xl border border-gray-200 p-4">
-                  <p className="font-semibold text-nct-navy">{shift.role_label || "Scheduled Shift"}</p>
+                  <p className="font-semibold text-nct-navy">Assigned Shift</p>
                   <p className="text-sm text-gray-500 mt-1">{formatShiftWindow(shift)}</p>
                   <div className="flex items-center justify-between mt-2 text-sm text-gray-600 gap-3">
-                    <span>{shift.location_label || employeeState?.primary_location || "NCT Recycling"}</span>
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{shift.status}</span>
                   </div>
                   {shift.notes && <p className="text-xs text-gray-500 mt-2">{shift.notes}</p>}

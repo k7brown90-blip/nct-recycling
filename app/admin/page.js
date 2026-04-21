@@ -170,8 +170,6 @@ export default function AdminPage() {
     employee_id: "",
     start_time: "09:00",
     end_time: "17:00",
-    role_label: "",
-    location_label: "",
     notes: "",
   });
 
@@ -716,8 +714,6 @@ export default function AdminPage() {
         shift_date: selectedWorkDate,
         start_time: workCalendarForm.start_time,
         end_time: workCalendarForm.end_time,
-        role_label: workCalendarForm.role_label,
-        location_label: workCalendarForm.location_label,
         notes: workCalendarForm.notes,
       }),
     });
@@ -1668,7 +1664,7 @@ export default function AdminPage() {
                           {dayShifts.slice(0, 2).map((shift) => (
                             <div key={shift.id} className="rounded-lg bg-slate-100 px-2 py-1">
                               <p className="text-[11px] font-semibold text-nct-navy truncate">{shift.display_name}</p>
-                              <p className="text-[10px] text-gray-500 truncate">{shift.role_label || shift.job_title || "Shift"}</p>
+                              <p className="text-[10px] text-gray-500 truncate">{new Date(shift.scheduled_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</p>
                             </div>
                           ))}
                           {dayShifts.length > 2 && <p className="text-[10px] text-gray-500">+{dayShifts.length - 2} more</p>}
@@ -1713,20 +1709,6 @@ export default function AdminPage() {
                   className="border border-gray-300 rounded-lg px-4 py-2"
                 />
               </div>
-              <input
-                type="text"
-                value={workCalendarForm.role_label}
-                onChange={(e) => setWorkCalendarForm((current) => ({ ...current, role_label: e.target.value }))}
-                placeholder="Role for this shift"
-                className="border border-gray-300 rounded-lg px-4 py-2"
-              />
-              <input
-                type="text"
-                value={workCalendarForm.location_label}
-                onChange={(e) => setWorkCalendarForm((current) => ({ ...current, location_label: e.target.value }))}
-                placeholder="Location"
-                className="border border-gray-300 rounded-lg px-4 py-2"
-              />
               <textarea
                 value={workCalendarForm.notes}
                 onChange={(e) => setWorkCalendarForm((current) => ({ ...current, notes: e.target.value }))}
@@ -1760,7 +1742,8 @@ export default function AdminPage() {
                       <div>
                         <p className="text-sm font-semibold text-nct-navy">{shift.display_name}</p>
                         <p className="text-sm text-gray-600 mt-0.5">{formatShiftTimeRange(shift.scheduled_start, shift.scheduled_end)}</p>
-                        <p className="text-xs text-gray-500 mt-1">{shift.role_label || shift.job_title || "Scheduled Shift"} · {shift.location_label || "NCT Recycling"}</p>
+                        {shift.job_title && <p className="text-xs text-gray-500 mt-1">{shift.job_title}</p>}
+                        {shift.notes && <p className="text-xs text-gray-500 mt-1">{shift.notes}</p>}
                       </div>
                       <button
                         type="button"

@@ -90,7 +90,7 @@ export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, i
                         {dayShifts.slice(0, 2).map((shift) => (
                           <div key={shift.id} className={`rounded-lg px-2 py-1 ${shift.employee_id === employee?.id ? "bg-blue-100" : "bg-slate-100"}`}>
                             <p className="text-[11px] font-semibold text-nct-navy truncate">{shift.display_name}</p>
-                            <p className="text-[10px] text-gray-500 truncate">{shift.role_label || shift.job_title || "Shift"}</p>
+                            <p className="text-[10px] text-gray-500 truncate">{formatCalendarShiftWindow(shift)}</p>
                           </div>
                         ))}
                         {dayShifts.length > 2 && <p className="text-[10px] text-gray-500">+{dayShifts.length - 2} more</p>}
@@ -127,7 +127,7 @@ export default function EmployeeWorkCalendar({ employee, initialCalendarMonth, i
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Your shift</span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">{shift.role_label || shift.job_title || "Scheduled Shift"} · {shift.location_label || "NCT Recycling"}</p>
+                  {shift.job_title && <p className="text-xs text-gray-500 mt-2">{shift.job_title}</p>}
                 </div>
               ))}
             </div>
