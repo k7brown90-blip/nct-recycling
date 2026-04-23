@@ -53,6 +53,12 @@ export default function AdminOnlineStorePanel({ authHeader }) {
           <p className="text-sm text-gray-600 mt-1 max-w-3xl">
             Shopping-day scheduling is being retired in favor of curated Shopify drops. Route inventory is now sorted on site and published as wholesale-ready lots.
           </p>
+          {data.connection?.store_domain && (
+            <p className="text-xs text-gray-500 mt-2">
+              Connected store target: {data.connection.store_domain}
+              {data.connection.token_source ? ` • token source: ${data.connection.token_source}` : ""}
+            </p>
+          )}
         </div>
         {data.store_url ? (
           <a href={data.store_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center bg-nct-navy hover:bg-nct-navy-dark text-white font-semibold px-4 py-2.5 rounded-xl transition-colors">
@@ -64,8 +70,77 @@ export default function AdminOnlineStorePanel({ authHeader }) {
       </div>
 
       {data.warning && (
-        <p className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">{data.warning}</p>
+        <div className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-2">
+          <p>{data.warning}</p>
+          {data.sync_error_code && (
+            <p className="text-xs text-amber-900">Code: {data.sync_error_code}</p>
+          )}
+          {data.sync_error_detail && (
+            <p className="text-xs text-amber-900 break-words">Detail: {data.sync_error_detail}</p>
+          )}
+        </div>
       )}
+
+      <div className="grid md:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)] gap-5 mb-5">
+        <div className="bg-slate-950 text-white rounded-2xl p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Shopify App Setup</p>
+              <p className="text-lg font-semibold mt-2">Released app install flow</p>
+              <p className="text-sm text-slate-300 mt-2 max-w-2xl">
+                Use the released Shopify app to grant the portal an offline Admin API token. This replaces the manual custom-app token step and keeps reseller login inside the NCT portal.
+              </p>
+            </div>
+            {data.connection?.install_url ? (
+              <a href={data.connection.install_url} className="inline-flex items-center justify-center bg-white text-slate-950 font-semibold px-4 py-2.5 rounded-xl transition-colors hover:bg-slate-200">
+                Connect Shopify
+              </a>
+            ) : (
+              <div className="text-xs text-slate-300 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2">
+                Set SHOPIFY_STORE_DOMAIN, SHOPIFY_API_KEY, and SHOPIFY_API_SECRET to enable install.
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 text-sm">
+            <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+              <p className="text-slate-400 text-xs uppercase tracking-wide">App URL</p>
+              <p className="mt-2 break-words">{data.connection?.app_url || "Unavailable"}</p>
+            </div>
+            <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+              <p className="text-slate-400 text-xs uppercase tracking-wide">Redirect URL</p>
+              <p className="mt-2 break-words">{data.connection?.redirect_url || "Unavailable"}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <p className="text-sm font-semibold text-nct-navy mb-3">Connection Record</p>
+          <dl className="space-y-3 text-sm text-gray-700">
+            <div>
+              <dt className="text-gray-400">Connected</dt>
+              <dd>{data.connection?.connected ? "Yes" : "No"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-400">OAuth Ready</dt>
+              <dd>{data.connection?.oauth_ready ? "Yes" : "No"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-400">Last Updated</dt>
+              <dd>{data.connection?.updated_at ? new Date(data.connection.updated_at).toLocaleString() : "Not installed"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-400">Install Source</dt>
+              <dd>{data.connection?.install_source || data.connection?.token_source || "Pending"}</dd>
+            </div>
+          </dl>
+          {data.connection?.storage_error && (
+            <p className="mt-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 break-words">
+              Storage error: {data.connection.storage_error}
+            </p>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-200">
@@ -100,6 +175,18 @@ export default function AdminOnlineStorePanel({ authHeader }) {
           <ul className="text-sm text-gray-700 space-y-1.5">
             {(data.required_env || []).map((key) => (
               <li key={key}>• {key}</li>
+            ))}
+          </ul>
+          <p className="text-xs font-semibold text-gray-500 mt-3">Optional compatibility env vars</p>
+          <ul className="text-sm text-gray-700 space-y-1.5 mt-2">
+            {(data.optional_env || []).map((key) => (
+              <li key={key}>• {key}</li>
+            ))}
+          </ul>
+          <p className="text-xs font-semibold text-gray-500 mt-3">Required Shopify scopes</p>
+          <ul className="text-sm text-gray-700 space-y-1.5 mt-2">
+            {(data.required_scopes || []).map((scope) => (
+              <li key={scope}>• {scope}</li>
             ))}
           </ul>
           <p className="text-xs text-gray-500 mt-3">The Shopify API secret should live only in deployment env vars and should be rotated if it has been shared outside the host settings.</p>
