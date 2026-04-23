@@ -54,7 +54,7 @@ export async function POST(request) {
           <p style="font-size:16px;margin:0 0 12px">${greeting}</p>
           <p style="font-size:15px;margin:0 0 20px">
             Your NCT Recycling partner account for <strong>${org_name || "your organization"}</strong> is ready.
-            Click the button below to set your password and access your partner portal.
+            Click the button below to review and accept your discard purchase agreement, then set your password and access your partner portal.
           </p>
           <p style="text-align:center;margin:28px 0">
             <a href="${activateUrl}"
@@ -63,7 +63,7 @@ export async function POST(request) {
             </a>
           </p>
           <p style="font-size:13px;color:#666;margin:20px 0 0">
-            This link expires in 7 days. Questions? Call us at (970) 232-9108.
+            This link expires in 7 days. Agreement acceptance is required before portal access is activated. Questions? Call us at (970) 232-9108.
           </p>
           <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />
           <p style="font-size:12px;color:#999;margin:0">

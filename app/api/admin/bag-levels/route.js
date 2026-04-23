@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase";
 import { addCanonicalCoOpBagCount, getCanonicalCoOpBagLevels } from "@/lib/co-op-canonical";
+import { getOperationalServiceAccounts } from "@/lib/organization-operations";
 import { NextResponse } from "next/server";
 
 function checkAdminAuth(request) {
@@ -73,6 +74,7 @@ export async function GET(request) {
 
   try {
     const canonicalLevels = await getCanonicalCoOpBagLevels(db, ids);
+    const serviceAccounts = await getOperationalServiceAccounts(db);
     if (canonicalLevels) {
       return NextResponse.json({
         nonprofits: result.map((nonprofit) => {
@@ -87,13 +89,18 @@ export async function GET(request) {
             pending_request: canonical.pending_request ?? null,
           };
         }),
+        service_accounts: serviceAccounts || [],
       });
+    }
+
+    if (serviceAccounts) {
+      return NextResponse.json({ nonprofits: result, service_accounts: serviceAccounts });
     }
   } catch (canonicalError) {
     console.error("Canonical co-op bag levels load error:", canonicalError);
   }
 
-  return NextResponse.json({ nonprofits: result });
+  return NextResponse.json({ nonprofits: result, service_accounts: result });
 }
 
 // PATCH — admin manually sets a bag count for a nonprofit (admin_override entry)

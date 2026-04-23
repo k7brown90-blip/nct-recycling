@@ -1,6 +1,7 @@
 "use client";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Image from "next/image";
 
 function ActivateContent() {
@@ -9,18 +10,69 @@ function ActivateContent() {
   const discardToken = params.get("discard_token");
   const [clicked, setClicked] = useState(false);
   const [error, setError] = useState("");
+  const [agreementLoading, setAgreementLoading] = useState(Boolean(discardToken));
+  const [agreementText, setAgreementText] = useState("");
+  const [signerName, setSignerName] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  useEffect(() => {
+    if (!discardToken) return;
+
+    let active = true;
+
+    fetch(`/api/auth/discard-agreement?discard_token=${encodeURIComponent(discardToken)}`)
+      .then(async (res) => {
+        const json = await res.json();
+        if (!active) return;
+
+        if (!res.ok) {
+          setError(json.error || "Failed to load the discard agreement.");
+          return;
+        }
+
+        setAgreementText(json.agreement_text || "");
+        setSignerName(json.contact_name || "");
+      })
+      .catch(() => {
+        if (active) {
+          setError("Network error. Please reload or contact NCT Recycling.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setAgreementLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [discardToken]);
 
   // Detect link type from the encoded Supabase URL (legacy co-op/reseller flow)
   const isRecovery = link?.includes("type=recovery");
 
   async function handleDiscardActivate() {
+    if (!acceptedTerms) {
+      setError("You must accept the discard agreement before continuing.");
+      return;
+    }
+    if (!signerName.trim()) {
+      setError("Enter the authorized representative name before continuing.");
+      return;
+    }
+
     setClicked(true);
     setError("");
     try {
       const res = await fetch("/api/auth/discard-activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discard_token: discardToken }),
+        body: JSON.stringify({
+          discard_token: discardToken,
+          signer_name: signerName.trim(),
+          accepted_terms: acceptedTerms,
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.link) {
@@ -46,7 +98,7 @@ function ActivateContent() {
         </div>
         <h1 className="text-2xl font-bold text-nct-navy mb-3">You&apos;re approved!</h1>
         <p className="text-gray-600 mb-8 leading-relaxed">
-          Your NCT Recycling partner account is ready. Click the button below to set your password
+          Review and accept your discard purchase agreement below, then continue to set your password
           and access your portal.
         </p>
         {error && (
@@ -59,12 +111,43 @@ function ActivateContent() {
             </p>
           </div>
         )}
+        <div className="text-left border border-gray-200 rounded-xl bg-gray-50 p-4 mb-6">
+          <p className="text-sm font-semibold text-nct-navy mb-2">Discard Purchase Agreement</p>
+          {agreementLoading ? (
+            <p className="text-sm text-gray-500">Loading agreement…</p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white p-4">
+              <pre className="whitespace-pre-wrap text-xs leading-5 text-gray-700 font-sans">{agreementText}</pre>
+            </div>
+          )}
+        </div>
+        <div className="text-left space-y-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Authorized Representative Name</label>
+            <input
+              type="text"
+              value={signerName}
+              onChange={(e) => setSignerName(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm"
+              placeholder="Enter the signer name"
+            />
+          </div>
+          <label className="flex items-start gap-3 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-1"
+            />
+            <span>I have reviewed the discard purchase agreement above and I am authorized to accept it on behalf of the organization.</span>
+          </label>
+        </div>
         <button
           onClick={handleDiscardActivate}
-          disabled={clicked}
+          disabled={clicked || agreementLoading || !agreementText}
           className="bg-nct-gold hover:bg-nct-gold-dark disabled:opacity-60 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors w-full max-w-xs"
         >
-          {clicked && !error ? "Opening…" : "Activate My Account →"}
+          {clicked && !error ? "Opening…" : "Accept Agreement & Activate →"}
         </button>
         <p className="text-xs text-gray-400 mt-6">
           Questions?{" "}
@@ -139,13 +222,13 @@ export default function ActivatePage() {
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-16">
       <div className="mb-8 text-center">
-        <a href="/" className="inline-flex items-center gap-3">
+        <Link href="/" className="inline-flex items-center gap-3">
           <Image src="/images/nct-logo.png" alt="NCT Recycling" width={48} height={48} className="rounded" />
           <div className="text-left">
             <p className="text-nct-navy font-bold text-lg leading-none">NCT Recycling</p>
             <p className="text-nct-gold text-xs font-semibold uppercase tracking-widest">Fort Collins, CO</p>
           </div>
-        </a>
+        </Link>
       </div>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 w-full max-w-md">
         <Suspense fallback={<div className="text-center text-gray-400">Loading…</div>}>

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { WORK_CALENDAR_DAYS, WORK_CALENDAR_MONTHS, buildWorkCalendarGrid, getWorkCalendarDateString } from "@/lib/work-calendar";
 
 const STATUS_COLORS = {
@@ -239,6 +239,7 @@ export default function AdminPage() {
 
   // Bag levels state
   const [bagLevels, setBagLevels] = useState([]);
+  const [serviceAccounts, setServiceAccounts] = useState([]);
   const [adminBagOverride, setAdminBagOverride] = useState({}); // { [nonprofit_id]: string }
   const [adminBagOverrideLoading, setAdminBagOverrideLoading] = useState(null); // nonprofit_id being saved
 
@@ -358,12 +359,12 @@ export default function AdminPage() {
         { value: "", label: "All" },
       ];
 
-  const authHeader = { Authorization: `Bearer ${secret}` };
+  const authHeader = useMemo(() => ({ Authorization: `Bearer ${secret}` }), [secret]);
 
   const fetchDashboard = useCallback(async () => {
     const res = await fetch("/api/admin/dashboard", { headers: authHeader });
     if (res.ok) setDashboard(await res.json());
-  }, [secret]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authHeader]);
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -371,7 +372,7 @@ export default function AdminPage() {
     const json = await res.json();
     setEmployees(json.employees || []);
     setLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchWorkCalendar = useCallback(async () => {
     setWorkCalendarLoading(true);
@@ -384,7 +385,7 @@ export default function AdminPage() {
       setMessage(`Error: ${json.error}`);
     }
     setWorkCalendarLoading(false);
-  }, [secret, workCalendarYear, workCalendarMonth]);
+  }, [authHeader, workCalendarYear, workCalendarMonth]);
 
   const fetchTimeReviewEntries = useCallback(async () => {
     setTimeReviewLoading(true);
@@ -396,7 +397,7 @@ export default function AdminPage() {
       setMessage(`Error: ${json.error}`);
     }
     setTimeReviewLoading(false);
-  }, [secret, timeReviewFilter]);
+  }, [authHeader, timeReviewFilter]);
 
   const fetchPayrollExports = useCallback(async () => {
     setPayrollLoading(true);
@@ -414,7 +415,7 @@ export default function AdminPage() {
       setMessage(`Error: ${json.error}`);
     }
     setPayrollLoading(false);
-  }, [secret, payrollForm.period_start, payrollForm.period_end]);
+  }, [authHeader, payrollForm.period_start, payrollForm.period_end]);
 
   const fetchApplications = useCallback(async () => {
     setLoading(true);
@@ -428,15 +429,16 @@ export default function AdminPage() {
     const json = await res.json();
     setApplications(json.applications || []);
     setLoading(false);
-  }, [filter, secret, apiPath, isNonprofit]);
+  }, [filter, authHeader, apiPath, isNonprofit]);
 
   const fetchBagLevels = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/admin/bag-levels", { headers: authHeader });
     const json = await res.json();
     setBagLevels(json.nonprofits || []);
+    setServiceAccounts(json.service_accounts || json.nonprofits || []);
     setLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchRoutes = useCallback(async () => {
     setLoading(true);
@@ -444,7 +446,7 @@ export default function AdminPage() {
     const json = await res.json();
     setRoutes(json.routes || []);
     setLoading(false);
-  }, [secret, routeFilter]);
+  }, [authHeader, routeFilter]);
 
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
@@ -452,7 +454,7 @@ export default function AdminPage() {
     const json = await res.json();
     setAppointments(json.appointments || []);
     setLoading(false);
-  }, [secret, apptFilter]);
+  }, [authHeader, apptFilter]);
 
   const fetchNpLots = useCallback(async (applicationId) => {
     setNpLotsLoading(true);
@@ -460,7 +462,7 @@ export default function AdminPage() {
     const json = await res.json();
     setNpLots(json.lots || []);
     setNpLotsLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchLots = useCallback(async () => {
     setLoading(true);
@@ -473,7 +475,7 @@ export default function AdminPage() {
     setLots(lotsJson.lots || []);
     setLotNonprofits(npJson.nonprofits || []);
     setLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchContainerRequests = useCallback(async () => {
     setContainerLoading(true);
@@ -481,7 +483,7 @@ export default function AdminPage() {
     const json = await res.json();
     setContainerRequests(json.requests || []);
     setContainerLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchDiscardAccounts = useCallback(async () => {
     setDiscardLoading(true);
@@ -489,7 +491,7 @@ export default function AdminPage() {
     const json = await res.json();
     setDiscardAccounts(json.accounts || []);
     setDiscardLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchDiscardPickups = useCallback(async (accountId) => {
     setDiscardPickupsLoading(true);
@@ -497,7 +499,7 @@ export default function AdminPage() {
     const json = await res.json();
     setDiscardPickups(json.pickups || []);
     setDiscardPickupsLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchDiscardRequests = useCallback(async (accountId) => {
     setDiscardRequestsLoading(true);
@@ -505,13 +507,13 @@ export default function AdminPage() {
     const json = await res.json();
     setDiscardRequests(json.requests || []);
     setDiscardRequestsLoading(false);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchDiscardBagCount = useCallback(async (accountId) => {
     const res = await fetch(`/api/admin/discard-bag-counts?account_id=${accountId}`, { headers: authHeader });
     const json = await res.json();
     if (res.ok) setDiscardBagCount(json);
-  }, [secret]);
+  }, [authHeader]);
 
   const fetchEmailUsers = useCallback(async () => {
     setEmailUsersLoading(true);
@@ -519,7 +521,7 @@ export default function AdminPage() {
     const json = await res.json();
     setEmailUsers(json.users || []);
     setEmailUsersLoading(false);
-  }, [secret]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authHeader]);
 
   const fetchShoppingDays = useCallback(async () => {
     setLoading(true);
@@ -528,7 +530,7 @@ export default function AdminPage() {
     const json = await res.json();
     setShoppingDays(json.days || []);
     setLoading(false);
-  }, [secret, shoppingFilter]);
+  }, [authHeader, shoppingFilter]);
 
   async function handleGenerateSundays() {
     setShoppingDayLoading(true); setMessage("");
@@ -1275,8 +1277,26 @@ export default function AdminPage() {
       headers: { "Content-Type": "application/json", ...authHeader },
       body: JSON.stringify({ id: requestId, ...updates }),
     });
-    if (res.ok) { fetchDiscardRequests(selectedDiscard.id); }
-    else setMessage("Failed to update request.");
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) {
+      fetchDiscardRequests(selectedDiscard.id);
+      fetchDiscardBagCount(selectedDiscard.id);
+    } else setMessage(`Error: ${json.error || "Failed to update request."}`);
+  }
+
+  async function handleScheduleDiscardRequest(requestRecord) {
+    const suggestedDate = requestRecord.scheduled_date || requestRecord.preferred_date || new Date().toISOString().slice(0, 10);
+    const scheduledDate = window.prompt("Enter the pickup date for this discard request (YYYY-MM-DD):", suggestedDate);
+
+    if (scheduledDate === null) return;
+
+    const trimmedDate = scheduledDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+      setMessage("Error: Enter the schedule date as YYYY-MM-DD.");
+      return;
+    }
+
+    await handleUpdateDiscardRequest(requestRecord.id, { status: "scheduled", scheduled_date: trimmedDate });
   }
 
   async function handleSaveDiscardEdits(e) {
@@ -1360,12 +1380,12 @@ export default function AdminPage() {
 
   async function handleCompleteStop() {
     if (!completingStop) return;
-    const { stop_id, nonprofit_id, route_id } = completingStop;
+    const { stop_id, route_id } = completingStop;
     const actual = actualBagsInput ? parseInt(actualBagsInput) : null;
     const res = await fetch("/api/admin/routes", {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({ action: "complete_stop", stop_id, nonprofit_id, route_id, actual_bags: actual }),
+      body: JSON.stringify({ action: "complete_stop", stop_id, route_id, actual_bags: actual }),
     });
     if (res.ok) {
       setMessage(`✅ Stop completed — bag counter reset for ${completingStop.org_name}.`);
@@ -1402,7 +1422,7 @@ export default function AdminPage() {
       }),
     });
     if (res.ok) {
-      setMessage("✅ Route created and notifications sent to nonprofits and resellers.");
+      setMessage("✅ Route created and notifications sent to service accounts and resellers.");
       setBuildingRoute(false); setRouteDate(""); setRouteTime(""); setRouteNotes(""); setRouteStops([]);
       fetchRoutes();
     } else {
@@ -1434,10 +1454,9 @@ export default function AdminPage() {
     const waypoints = [...stops]
       .sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0))
       .map((s) => {
-        // Supports both route-builder stops (address on root) and saved route stops (address on nonprofit_applications)
-        const np = s.nonprofit_applications || s;
-        const addr = [np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ");
-        return addr || np.org_name || s.org_name;
+        const org = s.organization || s.nonprofit_applications || s;
+        const addr = [org.address_street, org.address_city, org.address_state].filter(Boolean).join(", ");
+        return addr || org.org_name || s.org_name;
       });
     const points = [NCT_ADDRESS, ...waypoints, NCT_ADDRESS]; // start and end at NCT
     return "https://www.google.com/maps/dir/" + points.map(encodeURIComponent).join("/");
@@ -1450,18 +1469,23 @@ export default function AdminPage() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 
-  function addStop(nonprofit) {
-    if (routeStops.find((s) => s.nonprofit_id === nonprofit.id)) return;
-    // Pre-fill bags from pending request if available, otherwise from bag count or profile estimate
-    const requestBags = nonprofit.pending_request?.estimated_bags;
-    const bagsFill = requestBags ?? nonprofit.bag_count ?? nonprofit.estimated_bags ?? 0;
+  function addStop(account) {
+    if (routeStops.find((stop) => stop.enrollment_id === account.enrollment_id)) return;
+    const requestBags = account.pending_request?.estimated_bags;
+    const bagsFill = requestBags ?? account.bag_count ?? account.estimated_bags ?? 0;
     setRouteStops((prev) => [...prev, {
-      nonprofit_id: nonprofit.id,
-      org_name: nonprofit.org_name,
-      email: nonprofit.email,
-      address_street: nonprofit.address_street,
-      address_city: nonprofit.address_city,
-      address_state: nonprofit.address_state,
+      organization_id: account.organization_id,
+      enrollment_id: account.enrollment_id,
+      pickup_request_id: account.pending_request?.id || null,
+      nonprofit_id: account.nonprofit_id || null,
+      discard_account_id: account.discard_account_id || null,
+      program_type: account.program_type,
+      account_type: account.account_type,
+      org_name: account.org_name,
+      email: account.email,
+      address_street: account.address_street,
+      address_city: account.address_city,
+      address_state: account.address_state,
       estimated_bags: bagsFill,
       stop_order: prev.length + 1,
       notes: "",
@@ -1600,7 +1624,7 @@ export default function AdminPage() {
               </div>
               {/* Today's route */}
               <div className={`rounded-xl p-4 border ${dashboard.today_route ? "bg-nct-navy text-white border-nct-navy" : "bg-gray-50 border-gray-200"}`}>
-                <p className="text-xs font-bold uppercase tracking-wide mb-1 opacity-70">Today's Route</p>
+                <p className="text-xs font-bold uppercase tracking-wide mb-1 opacity-70">Today&apos;s Route</p>
                 {dashboard.today_route ? (
                   <div className="flex items-center justify-between">
                     <div>
@@ -3141,32 +3165,35 @@ export default function AdminPage() {
               </div>
 
               <h4 className="font-semibold text-nct-navy text-sm mb-2">Add Stops</h4>
-              <p className="text-xs text-gray-500 mb-3">Click a nonprofit below to add them to this route. Sorted by bag count (highest first).</p>
+              <p className="text-xs text-gray-500 mb-3">Click a service account below to add it to this route. Co-op and discard stops share the same logistics flow here.</p>
               <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
-                {bagLevels
+                {serviceAccounts
                   .sort((a, b) => (b.bag_count ?? -1) - (a.bag_count ?? -1))
-                  .map((np) => {
-                    const added = routeStops.find((s) => s.nonprofit_id === np.id);
+                  .map((account) => {
+                    const added = routeStops.find((stop) => stop.enrollment_id === account.enrollment_id);
                     return (
-                      <div key={np.id} className={`flex items-center justify-between border rounded-lg px-3 py-2 text-sm ${added ? "bg-green-50 border-green-300" : "bg-white border-gray-200"}`}>
+                      <div key={account.enrollment_id} className={`flex items-center justify-between border rounded-lg px-3 py-2 text-sm ${added ? "bg-green-50 border-green-300" : "bg-white border-gray-200"}`}>
                         <div>
-                          <span className="font-medium">{np.org_name}</span>
-                          <span className="text-gray-400 ml-2 text-xs">{[np.address_city, np.address_state].filter(Boolean).join(", ")}</span>
-                          {np.pending_request && (
+                          <span className="font-medium">{account.org_name}</span>
+                          <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${account.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                            {account.program_type === "discard" ? "Discard" : "Co-op"}
+                          </span>
+                          <span className="text-gray-400 ml-2 text-xs">{[account.address_city, account.address_state].filter(Boolean).join(", ")}</span>
+                          {account.pending_request && (
                             <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">
-                              Requested {np.pending_request.estimated_bags ? `${np.pending_request.estimated_bags} bags` : np.pending_request.estimated_weight_lbs ? `${np.pending_request.estimated_weight_lbs} lbs` : "pickup"}
+                              Requested {account.pending_request.estimated_bags ? `${account.pending_request.estimated_bags} bags` : account.pending_request.estimated_weight_lbs ? `${account.pending_request.estimated_weight_lbs} lbs` : "pickup"}
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={`font-bold ${bagColor(np.bag_count)}`}>
-                            {np.bag_count ?? "—"} bags
+                          <span className={`font-bold ${bagColor(account.bag_count)}`}>
+                            {account.bag_count ?? "—"} bags
                           </span>
                           {added ? (
-                            <button onClick={() => setRouteStops((prev) => prev.filter((s) => s.nonprofit_id !== np.id))}
+                            <button onClick={() => setRouteStops((prev) => prev.filter((stop) => stop.enrollment_id !== account.enrollment_id))}
                               className="text-xs text-red-600 underline">Remove</button>
                           ) : (
-                            <button onClick={() => addStop(np)}
+                            <button onClick={() => addStop(account)}
                               className="text-xs bg-nct-navy text-white px-3 py-1 rounded-full">Add</button>
                           )}
                         </div>
@@ -3179,11 +3206,14 @@ export default function AdminPage() {
                 <div className="mb-4">
                   <h4 className="font-semibold text-nct-navy text-sm mb-2">Stops on This Route ({routeStops.length})</h4>
                   {routeStops.map((s, i) => (
-                    <div key={s.nonprofit_id} className="flex items-center gap-2 text-sm mb-1">
+                    <div key={s.enrollment_id} className="flex items-center gap-2 text-sm mb-1">
                       <span className="w-5 h-5 rounded-full bg-nct-navy text-white flex items-center justify-center text-xs">{i + 1}</span>
                       <span className="flex-1 font-medium">{s.org_name}</span>
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${s.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                        {s.program_type === "discard" ? "Discard" : "Co-op"}
+                      </span>
                       <input type="number" min="0" value={s.estimated_bags}
-                        onChange={(e) => setRouteStops((prev) => prev.map((stop) => stop.nonprofit_id === s.nonprofit_id ? { ...stop, estimated_bags: parseInt(e.target.value) || 0 } : stop))}
+                        onChange={(e) => setRouteStops((prev) => prev.map((stop) => stop.enrollment_id === s.enrollment_id ? { ...stop, estimated_bags: parseInt(e.target.value) || 0 } : stop))}
                         className="w-16 border border-gray-300 rounded px-2 py-1 text-sm" placeholder="bags" />
                       <span className="text-xs text-gray-400">bags</span>
                     </div>
@@ -3205,7 +3235,7 @@ export default function AdminPage() {
                 {routeLoading ? "Creating & Notifying…" : `Create Route & Notify (${routeStops.length} stops)`}
               </button>
               <p className="text-xs text-gray-500 text-center mt-2">
-                This will email each nonprofit on the route and all approved resellers.
+                This will email each organization on the route and all approved resellers.
               </p>
             </div>
           )}
@@ -3255,6 +3285,7 @@ export default function AdminPage() {
                     {/* Stops */}
                     <div className="space-y-1.5 mb-3">
                       {r.stops?.map((s) => {
+                        const org = s.organization || s.nonprofit_applications || {};
                         const isDone = s.stop_status === "completed";
                         const isSkipped = s.stop_status === "skipped";
                         const isCompleting = completingStop?.stop_id === s.id;
@@ -3263,7 +3294,10 @@ export default function AdminPage() {
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="text-sm font-medium text-gray-700 shrink-0">{s.stop_order}.</span>
-                                <span className="text-sm font-medium text-gray-900 truncate">{s.nonprofit_applications?.org_name}</span>
+                                <span className="text-sm font-medium text-gray-900 truncate">{org.org_name}</span>
+                                <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${s.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                                  {s.program_type === "discard" ? "Discard" : "Co-op"}
+                                </span>
                                 {isDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">✓ Done</span>}
                                 {isSkipped && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full shrink-0">Skipped</span>}
                                 {s.no_inventory && <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full shrink-0">No inventory</span>}
@@ -3273,11 +3307,14 @@ export default function AdminPage() {
                                 {isDone && s.actual_bags != null && (
                                   <span className={`text-xs font-semibold ${s.no_inventory ? "text-gray-500" : "text-green-700"}`}>{s.actual_bags} actual</span>
                                 )}
+                                {s.payout?.amount_owed != null && (
+                                  <span className="text-xs text-gray-400">${Number(s.payout.amount_owed || 0).toFixed(2)} payout</span>
+                                )}
                                 {!isDone && !isSkipped && isActive && (
                                   <button
                                     onClick={() => {
                                       if (isCompleting) { setCompletingStop(null); setActualBagsInput(""); }
-                                      else { setCompletingStop({ stop_id: s.id, nonprofit_id: s.nonprofit_id, route_id: r.id, org_name: s.nonprofit_applications?.org_name }); setActualBagsInput(""); }
+                                      else { setCompletingStop({ stop_id: s.id, route_id: r.id, org_name: org.org_name }); setActualBagsInput(""); }
                                     }}
                                     className="text-xs bg-green-600 hover:bg-green-700 text-white px-2.5 py-1 rounded-lg transition-colors"
                                   >
@@ -4518,7 +4555,7 @@ export default function AdminPage() {
                                       {req.status !== "completed" && req.status !== "cancelled" && (
                                         <div className="flex gap-1 shrink-0">
                                           {req.status === "pending" && (
-                                            <button onClick={() => handleUpdateDiscardRequest(req.id, { status: "scheduled" })}
+                                            <button onClick={() => handleScheduleDiscardRequest(req)}
                                               className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors">
                                               Schedule
                                             </button>
@@ -4800,8 +4837,9 @@ export default function AdminPage() {
               <div className="flex flex-wrap gap-2">
                 {[
                   { value: "all", label: `All Portal Users (${emailUsers.length})` },
-                  { value: "nonprofit", label: `Nonprofit Partners (${emailUsers.filter(u => u.role === "nonprofit").length})` },
-                  { value: "reseller", label: `Retail Partners (${emailUsers.filter(u => u.role === "reseller").length})` },
+                  { value: "nonprofit", label: `Co-op Partners (${emailUsers.filter(u => u.role === "nonprofit").length})` },
+                  { value: "reseller", label: `Resellers (${emailUsers.filter(u => u.role === "reseller").length})` },
+                  { value: "discard", label: `Discard Accounts (${emailUsers.filter(u => u.role === "discard").length})` },
                   { value: "individual", label: "Individual Email" },
                 ].map(({ value, label }) => (
                   <button key={value} type="button"
@@ -4820,15 +4858,31 @@ export default function AdminPage() {
             {/* Individual recipient input */}
             {emailRecipientType === "individual" && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Recipient Email</label>
-                <input
-                  type="email"
+                <label className="block text-sm font-medium text-gray-700 mb-1">Recipient</label>
+                <select
                   value={emailIndividual}
                   onChange={(e) => setEmailIndividual(e.target.value)}
-                  placeholder="partner@example.com"
                   required
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
+                >
+                  <option value="">Select a portal recipient</option>
+                  {emailUsers
+                    .slice()
+                    .sort((left, right) => left.name.localeCompare(right.name))
+                    .map((user) => {
+                      const roleLabel = user.role === "nonprofit"
+                        ? "Co-op"
+                        : user.role === "discard"
+                          ? "Discard"
+                          : "Reseller";
+
+                      return (
+                        <option key={`${user.role}:${user.email}`} value={`${user.email}|${user.name}`}>
+                          {`${user.name} - ${roleLabel} - ${user.email}`}
+                        </option>
+                      );
+                    })}
+                </select>
               </div>
             )}
 
@@ -4904,8 +4958,8 @@ export default function AdminPage() {
                   <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2 text-sm">
                     <span className="text-gray-800 font-medium">{u.name}</span>
                     <span className="text-gray-500">{u.email}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === "nonprofit" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
-                      {u.role === "nonprofit" ? "Nonprofit" : "Retail"}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === "nonprofit" ? "bg-green-100 text-green-700" : u.role === "discard" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
+                      {u.role === "nonprofit" ? "Co-op" : u.role === "discard" ? "Discard" : "Reseller"}
                     </span>
                   </div>
                 ))}

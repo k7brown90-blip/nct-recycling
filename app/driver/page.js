@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 
 const NCT_ADDRESS = "6108 South College Ave STE C, Fort Collins, CO 80525";
 
@@ -13,8 +13,8 @@ function buildMapsUrl(stops) {
   const waypoints = [...stops]
     .sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0))
     .map((s) => {
-      const np = s.nonprofit_applications || s;
-      return [np.address_street, np.address_city, np.address_state].filter(Boolean).join(", ") || np.org_name;
+      const org = s.organization || s.nonprofit_applications || s;
+      return [org.address_street, org.address_city, org.address_state].filter(Boolean).join(", ") || org.org_name;
     });
   const points = [NCT_ADDRESS, ...waypoints, NCT_ADDRESS];
   return "https://www.google.com/maps/dir/" + points.map(encodeURIComponent).join("/");
@@ -51,8 +51,14 @@ const MONTH_NAMES = ["January","February","March","April","May","June","July","A
 const DAY_LABELS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
 
 export default function DriverPage() {
-  const [pin, setPin] = useState("");
-  const [authed, setAuthed] = useState(false);
+  const [pin, setPin] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return sessionStorage.getItem("driver_pin") || "";
+  });
+  const [authed, setAuthed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return Boolean(sessionStorage.getItem("driver_pin"));
+  });
   const [pinError, setPinError] = useState("");
 
   // Calendar state: which two months are shown (base = first month)
@@ -68,7 +74,7 @@ export default function DriverPage() {
   const [routeLoading, setRouteLoading] = useState(false);
 
   // Stop interaction state
-  const [completingStop, setCompletingStop] = useState(null); // { stop_id, nonprofit_id, route_id, org_name, estimated_bags }
+  const [completingStop, setCompletingStop] = useState(null); // { stop_id, route_id, org_name, estimated_bags }
   const [actualBags, setActualBags] = useState("");
   const [sanityPrompt, setSanityPrompt] = useState(false); // 3x sanity check
   const [noInventoryConfirm, setNoInventoryConfirm] = useState(null); // { stop_id, nonprofit_id, route_id, org_name }
@@ -76,12 +82,6 @@ export default function DriverPage() {
   const [message, setMessage] = useState("");
 
   const authHeader = { Authorization: `Bearer ${pin}` };
-
-  // Restore PIN
-  useEffect(() => {
-    const saved = sessionStorage.getItem("driver_pin");
-    if (saved) { setPin(saved); setAuthed(true); }
-  }, []);
 
   // Load calendar data when months change or after auth
   const loadCalendar = useCallback(async (year, month, pinOverride) => {
@@ -103,10 +103,6 @@ export default function DriverPage() {
     setCalendarLoading(false);
   }, [pin]);
 
-  useEffect(() => {
-    if (authed) loadCalendar(baseYear, baseMonth);
-  }, [authed, baseYear, baseMonth, loadCalendar]);
-
   async function handlePinSubmit(e) {
     e.preventDefault();
     setPinError("");
@@ -116,6 +112,7 @@ export default function DriverPage() {
     if (res.ok) {
       sessionStorage.setItem("driver_pin", pin);
       setAuthed(true);
+      loadCalendar(baseYear, baseMonth, pin);
     } else {
       setPinError("Incorrect PIN. Try again.");
     }
@@ -176,12 +173,11 @@ export default function DriverPage() {
   }
 
   function startCompletingStop(s) {
-    const np = s.nonprofit_applications;
+    const org = s.organization || s.nonprofit_applications || {};
     setCompletingStop({
       stop_id: s.id,
-      nonprofit_id: s.nonprofit_id,
       route_id: route.id,
-      org_name: np?.org_name,
+      org_name: org.org_name,
       estimated_bags: s.estimated_bags,
     });
     setActualBags("");
@@ -208,7 +204,6 @@ export default function DriverPage() {
       body: JSON.stringify({
         action: "complete_stop",
         stop_id: completingStop.stop_id,
-        nonprofit_id: completingStop.nonprofit_id,
         route_id: completingStop.route_id,
         actual_bags: bags || null,
       }),
@@ -235,7 +230,6 @@ export default function DriverPage() {
       body: JSON.stringify({
         action: "no_inventory_stop",
         stop_id: stop.stop_id,
-        nonprofit_id: stop.nonprofit_id,
         route_id: route.id,
       }),
     });
@@ -370,11 +364,11 @@ export default function DriverPage() {
 
           {/* Stops */}
           {route.stops?.map((s) => {
-            const np = s.nonprofit_applications;
+            const org = s.organization || s.nonprofit_applications || {};
             const isDone = s.stop_status === "completed";
             const isCompleting = completingStop?.stop_id === s.id;
             const isNoInventoryPending = noInventoryConfirm?.stop_id === s.id;
-            const addr = [np?.address_street, np?.address_city, np?.address_state].filter(Boolean).join(", ");
+            const addr = [org.address_street, org.address_city, org.address_state].filter(Boolean).join(", ");
             const stopMapsUrl = addr ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}` : null;
 
             return (
@@ -386,7 +380,12 @@ export default function DriverPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`font-bold text-base ${isDone ? (s.no_inventory ? "text-gray-500" : "text-green-800") : "text-gray-900"}`}>
-                        {np?.org_name}
+                        {org.org_name}
+                        {s.program_type && (
+                          <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${s.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                            {s.program_type === "discard" ? "Discard" : "Co-op"}
+                          </span>
+                        )}
                         {s.no_inventory && <span className="ml-2 text-xs font-normal text-gray-400">No inventory</span>}
                       </p>
                       {addr && (
@@ -394,17 +393,20 @@ export default function DriverPage() {
                           {addr}
                         </a>
                       )}
-                      {np?.available_pickup_hours && (
-                        <p className="text-xs text-gray-400 mt-0.5">🕐 {np.available_pickup_hours}</p>
+                      {org.available_pickup_hours && (
+                        <p className="text-xs text-gray-400 mt-0.5">🕐 {org.available_pickup_hours}</p>
                       )}
-                      {np?.dock_instructions && (
-                        <p className="text-xs text-gray-500 mt-1 bg-yellow-50 rounded px-2 py-1">📦 {np.dock_instructions}</p>
+                      {org.dock_instructions && (
+                        <p className="text-xs text-gray-500 mt-1 bg-yellow-50 rounded px-2 py-1">📦 {org.dock_instructions}</p>
                       )}
                       {s.notes && <p className="text-xs text-gray-500 mt-0.5">Note: {s.notes}</p>}
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-xs text-gray-400">{s.estimated_bags ?? "—"} bags est.</span>
                         {isDone && s.actual_bags != null && !s.no_inventory && (
                           <span className="text-xs font-bold text-green-700">{s.actual_bags} actual</span>
+                        )}
+                        {s.payout?.amount_owed != null && (
+                          <span className="text-xs text-gray-500">${Number(s.payout.amount_owed || 0).toFixed(2)} payout</span>
                         )}
                         {isDone && s.completed_at && (
                           <span className="text-xs text-gray-400">
@@ -422,7 +424,7 @@ export default function DriverPage() {
                     {/* No-inventory confirm */}
                     {isNoInventoryPending ? (
                       <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
-                        <p className="text-sm font-semibold text-gray-800">No bags at {np?.org_name}?</p>
+                        <p className="text-sm font-semibold text-gray-800">No bags at {org.org_name}?</p>
                         <p className="text-xs text-gray-500">This will log 0 bags and flag as no inventory.</p>
                         <div className="flex gap-2">
                           <button onClick={submitNoInventory} disabled={actionLoading}
@@ -479,7 +481,7 @@ export default function DriverPage() {
                           Complete Stop
                         </button>
                         <button
-                          onClick={() => setNoInventoryConfirm({ stop_id: s.id, nonprofit_id: s.nonprofit_id, org_name: np?.org_name })}
+                          onClick={() => setNoInventoryConfirm({ stop_id: s.id, org_name: org.org_name })}
                           className="px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-sm transition-colors"
                           title="No bags available at this location"
                         >
@@ -544,12 +546,18 @@ export default function DriverPage() {
   ];
 
   function goBack() {
-    if (baseMonth === 0) { setBaseMonth(11); setBaseYear(baseYear - 1); }
-    else setBaseMonth(baseMonth - 1);
+    const nextMonth = baseMonth === 0 ? 11 : baseMonth - 1;
+    const nextYear = baseMonth === 0 ? baseYear - 1 : baseYear;
+    setBaseMonth(nextMonth);
+    setBaseYear(nextYear);
+    if (authed) loadCalendar(nextYear, nextMonth);
   }
   function goForward() {
-    if (baseMonth === 11) { setBaseMonth(0); setBaseYear(baseYear + 1); }
-    else setBaseMonth(baseMonth + 1);
+    const nextMonth = baseMonth === 11 ? 0 : baseMonth + 1;
+    const nextYear = baseMonth === 11 ? baseYear + 1 : baseYear;
+    setBaseMonth(nextMonth);
+    setBaseYear(nextYear);
+    if (authed) loadCalendar(nextYear, nextMonth);
   }
 
   return (

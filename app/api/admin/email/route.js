@@ -31,6 +31,25 @@ async function getApprovedUsers(db, recipientType) {
     }
   }
 
+  if (recipientType === "all" || recipientType === "discard") {
+    const { data } = await db
+      .from("discard_accounts")
+      .select("contact_email, contact_name, org_name")
+      .eq("status", "active")
+      .not("contact_email", "is", null)
+      .order("org_name");
+    if (data) {
+      data.forEach((account) => {
+        if (!account.contact_email) return;
+        users.push({
+          email: account.contact_email,
+          name: account.org_name || account.contact_name || account.contact_email,
+          role: "discard",
+        });
+      });
+    }
+  }
+
   return users;
 }
 

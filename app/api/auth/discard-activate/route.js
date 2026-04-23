@@ -1,5 +1,8 @@
 import { createServiceClient } from "@/lib/supabase";
+import { upsertCanonicalSignedAgreementDocument, getDiscardAgreementStoragePath } from "@/lib/agreement-documents";
 import { upsertProfileRecord } from "@/lib/auth-profile";
+import { generateDiscardAgreementPDF } from "@/lib/discard-agreement";
+import { syncDiscardAccountToCanonical } from "@/lib/discard-canonical";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
@@ -9,10 +12,18 @@ import { NextResponse } from "next/server";
 // email security scanners can't consume it before the real user clicks.
 // Each button click generates a fresh, independent auth token.
 export async function POST(request) {
-  const { discard_token } = await request.json();
+  const { discard_token, signer_name, accepted_terms } = await request.json();
 
   if (!discard_token) {
     return NextResponse.json({ error: "Missing token." }, { status: 400 });
+  }
+
+  if (!accepted_terms) {
+    return NextResponse.json({ error: "You must accept the discard agreement before activating the account." }, { status: 400 });
+  }
+
+  if (!signer_name?.trim()) {
+    return NextResponse.json({ error: "Enter the name of the authorized representative accepting the agreement." }, { status: 400 });
   }
 
   const db = createServiceClient();
@@ -20,7 +31,7 @@ export async function POST(request) {
   // Look up the account by invite token — must not be expired
   const { data: account, error: lookupError } = await db
     .from("discard_accounts")
-    .select("id, contact_email, user_id, org_name, contact_name")
+    .select("*")
     .eq("invite_token", discard_token)
     .gt("invite_expires_at", new Date().toISOString())
     .maybeSingle();
@@ -35,6 +46,49 @@ export async function POST(request) {
   if (!email) {
     return NextResponse.json({ error: "No email on file for this account." }, { status: 400 });
   }
+
+  const signedAt = new Date().toISOString();
+  const agreementPdf = await generateDiscardAgreementPDF({
+    account,
+    signerName: signer_name.trim(),
+    signedAt,
+  });
+  const storagePath = getDiscardAgreementStoragePath(account.id);
+  const { error: uploadError } = await db.storage
+    .from("nonprofit-docs")
+    .upload(storagePath, agreementPdf, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error("Discard agreement upload error:", uploadError);
+    return NextResponse.json({ error: "Failed to store the signed agreement." }, { status: 500 });
+  }
+
+  try {
+    await syncDiscardAccountToCanonical(db, account);
+    await upsertCanonicalSignedAgreementDocument(db, "discard_accounts", account.id, {
+      storageBucket: "nonprofit-docs",
+      storagePath,
+      originalFilename: `${account.org_name || "discard-account"}-signed-agreement.pdf`,
+      mimeType: "application/pdf",
+      uploadedFrom: "discard_partner_acceptance",
+      metadata: {
+        signer_name: signer_name.trim(),
+        signer_email: email,
+        accepted_terms: true,
+        signed_at: signedAt,
+      },
+    });
+  } catch (agreementError) {
+    console.error("Discard agreement canonical document sync error:", agreementError);
+  }
+
+  await db
+    .from("discard_accounts")
+    .update({ contract_date: signedAt.slice(0, 10) })
+    .eq("id", account.id);
 
   const adminClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,

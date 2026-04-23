@@ -4,6 +4,27 @@ import { syncDiscardAccountToCanonical } from "@/lib/discard-canonical";
 import { getCanonicalProgramSnapshot } from "@/lib/organization-status";
 import { NextResponse } from "next/server";
 
+function normalizeNullableString(value) {
+  if (typeof value !== "string") {
+    return value ?? null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeNullableNumber(value) {
+  if (value === "" || value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : value;
+}
+
+function normalizeNullableInteger(value) {
+  if (value === "" || value == null) return null;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : value;
+}
+
 function checkAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.ADMIN_SECRET}`;
 }
@@ -103,12 +124,32 @@ export async function PATCH(request) {
   ];
   const updates = {};
   for (const key of allowed) {
-    if (key in body) updates[key] = body[key] ?? null;
+    if (!(key in body)) continue;
+
+    if (["rate_per_1000_lbs", "flat_rate_per_pickup"].includes(key)) {
+      updates[key] = normalizeNullableNumber(body[key]);
+      continue;
+    }
+
+    if (["min_lbs_weekly", "min_lbs_biweekly", "min_lbs_adhoc", "projected_lbs_week"].includes(key)) {
+      updates[key] = normalizeNullableInteger(body[key]);
+      continue;
+    }
+
+    if (["org_name", "address_street", "address_city", "address_state", "address_zip", "contact_name", "contact_email", "contact_phone", "notes", "contract_date"].includes(key)) {
+      updates[key] = normalizeNullableString(body[key]);
+      continue;
+    }
+
+    updates[key] = body[key] ?? null;
   }
 
   const db = createServiceClient();
   const { error } = await db.from("discard_accounts").update(updates).eq("id", id);
-  if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+  if (error) {
+    console.error("Discard account update error:", error);
+    return NextResponse.json({ error: "Update failed." }, { status: 500 });
+  }
 
   try {
     const { data: account, error: accountError } = await db

@@ -8,6 +8,12 @@ import {
   updateCanonicalCoOpRequestStatus,
   updateCanonicalCoOpRouteStatus,
 } from "@/lib/co-op-canonical";
+import {
+  completeOperationalStop,
+  createOperationalRoute,
+  getOperationalRoutes,
+  updateOperationalRouteStatus,
+} from "@/lib/organization-operations";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 
@@ -53,6 +59,27 @@ async function syncLegacyRouteAggregate(db, routeId) {
   return updates;
 }
 
+async function ensureShoppingDayOpen(db, shoppingDate) {
+  if (!shoppingDate) return;
+
+  const { data: existingDay } = await db
+    .from("shopping_days")
+    .select("id")
+    .eq("shopping_date", shoppingDate)
+    .maybeSingle();
+
+  if (existingDay?.id) {
+    await db.from("shopping_days").update({ status: "open" }).eq("id", existingDay.id);
+    return;
+  }
+
+  await db.from("shopping_days").insert({
+    shopping_date: shoppingDate,
+    status: "open",
+    route_id: null,
+  });
+}
+
 // GET — list pickup routes
 export async function GET(request) {
   if (!checkAdminAuth(request)) {
@@ -62,6 +89,15 @@ export async function GET(request) {
   const db = createServiceClient();
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
+
+  try {
+    const canonicalRoutes = await getOperationalRoutes(db, { status: status || null });
+    if (canonicalRoutes !== null) {
+      return NextResponse.json({ routes: canonicalRoutes });
+    }
+  } catch (canonicalError) {
+    console.error("Unified operations routes load error:", canonicalError);
+  }
 
   const query = db
     .from("pickup_routes")
@@ -139,7 +175,7 @@ export async function POST(request) {
   }
 
   const { scheduled_date, scheduled_time, notes, stops } = await request.json();
-  // stops = [{ nonprofit_id, stop_order, estimated_bags, notes }]
+  // stops = [{ organization_id, enrollment_id, org_name, email, stop_order, estimated_bags, notes }]
 
   if (!scheduled_date || !stops?.length) {
     return NextResponse.json({ error: "Date and at least one stop are required." }, { status: 400 });
@@ -156,6 +192,80 @@ export async function POST(request) {
     shoppingDay.setDate(shoppingDay.getDate() + 1);
   }
   const shopping_date = shoppingDay.toISOString().split("T")[0];
+
+  try {
+    const routeId = await createOperationalRoute(db, {
+      scheduled_date,
+      scheduled_time,
+      shopping_date,
+      notes,
+      stops,
+    });
+
+    if (routeId) {
+      await ensureShoppingDayOpen(db, shopping_date);
+
+      const pickupDateStr = new Date(scheduled_date + "T12:00:00").toLocaleDateString("en-US", {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+      });
+
+      const shoppingDateStr = new Date(shopping_date + "T12:00:00").toLocaleDateString("en-US", {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+      });
+
+      const organizationEmails = (stops || [])
+        .filter((stop) => stop.email)
+        .map((stop) =>
+          resend.emails.send({
+            from: "NCT Recycling <donate@nctrecycling.com>",
+            to: stop.email,
+            subject: `Pickup Scheduled - ${pickupDateStr}`,
+            html: `
+              <h2>Your Pickup Has Been Scheduled</h2>
+              <p>Hello,</p>
+              <p>NCT Recycling has scheduled a pickup from <strong>${stop.org_name || "your organization"}</strong>.</p>
+              <p><strong>Pickup Date:</strong> ${pickupDateStr}${scheduled_time ? `<br><strong>Estimated Time:</strong> ${scheduled_time}` : ""}</p>
+              ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ""}
+              <p>Please ensure your bags are accessible and your portal count is current before the pickup date.</p>
+              <p>Questions? Call us at (970) 232-9108 or email donate@nctrecycling.com.</p>
+              <p>- NCT Recycling Team</p>
+            `,
+          }).catch((err) => console.error("Organization route email error:", err))
+        );
+
+      const { data: resellers } = await db
+        .from("reseller_applications")
+        .select("email, full_name")
+        .eq("status", "approved");
+
+      const resellerEmails = (resellers || []).map((reseller) =>
+        resend.emails.send({
+          from: "NCT Recycling <donate@nctrecycling.com>",
+          to: reseller.email,
+          subject: `Shopping Day Confirmed - Book Now for ${shoppingDateStr}`,
+          html: `
+            <h2>New Shopping Day Available - Book Your Spot Now</h2>
+            <p>Hi ${reseller.full_name?.split(" ")[0] || "there"},</p>
+            <p>A fresh load is being picked up on <strong>${pickupDateStr}</strong> and shopping opens the next day.</p>
+            <p><strong>Shopping Opens:</strong> ${shoppingDateStr}</p>
+            <p><a href="https://www.nctrecycling.com/reseller/dashboard">Book My Shopping Visit</a></p>
+            <p>- NCT Recycling Team</p>
+          `,
+        }).catch((err) => console.error("Reseller email error:", err))
+      );
+
+      await Promise.allSettled([...organizationEmails, ...resellerEmails]);
+
+      await db.from("pickup_runs").update({
+        nonprofits_notified_at: new Date().toISOString(),
+        resellers_notified_at: new Date().toISOString(),
+      }).eq("id", routeId);
+
+      return NextResponse.json({ success: true, id: routeId });
+    }
+  } catch (canonicalError) {
+    console.error("Unified operations route create error:", canonicalError);
+  }
 
   // Create route
   const { data: route, error: routeError } = await db
@@ -325,8 +435,20 @@ export async function PATCH(request) {
   // ── Complete an individual stop ──
   if (action === "complete_stop") {
     const { stop_id, nonprofit_id, route_id, actual_bags } = body;
-    if (!stop_id || !nonprofit_id) {
-      return NextResponse.json({ error: "Missing stop_id or nonprofit_id." }, { status: 400 });
+    if (!stop_id) {
+      return NextResponse.json({ error: "Missing stop_id." }, { status: 400 });
+    }
+
+    try {
+      const completedStop = await completeOperationalStop(db, stop_id, {
+        actualBags: actual_bags ?? null,
+      });
+
+      if (completedStop) {
+        return NextResponse.json({ success: true });
+      }
+    } catch (canonicalError) {
+      console.error("Unified operations stop completion error:", canonicalError);
     }
 
     // Mark stop completed
@@ -422,6 +544,22 @@ export async function PATCH(request) {
     if (!valid.includes(status)) {
       return NextResponse.json({ error: "Invalid status." }, { status: 400 });
     }
+
+    try {
+      const canonicalUpdates = await updateOperationalRouteStatus(db, route_id, status);
+      if (canonicalUpdates) {
+        if (status === "completed") {
+          const canonicalRoutes = await getOperationalRoutes(db, { scheduledDate: null });
+          const route = (canonicalRoutes || []).find((item) => item.id === route_id);
+          await ensureShoppingDayOpen(db, route?.shopping_date || null);
+        }
+
+        return NextResponse.json({ success: true });
+      }
+    } catch (canonicalError) {
+      console.error("Unified operations route status update error:", canonicalError);
+    }
+
     const routeUpdates = { status };
     if (status !== "completed") {
       routeUpdates.completion_type = null;

@@ -1,5 +1,9 @@
 import { createServiceClient } from "@/lib/supabase";
-import { getCanonicalDiscardRequests, updateCanonicalDiscardPickupRequest } from "@/lib/discard-canonical";
+import {
+  getCanonicalDiscardRequests,
+  markCanonicalDiscardPickupCollected,
+  updateCanonicalDiscardPickupRequest,
+} from "@/lib/discard-canonical";
 import { NextResponse } from "next/server";
 
 function checkAuth(request) {
@@ -42,6 +46,9 @@ export async function PATCH(request) {
   const body = await request.json();
   const { id } = body;
   if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
+  if (body.status === "scheduled" && !body.scheduled_date) {
+    return NextResponse.json({ error: "Scheduled date required." }, { status: 400 });
+  }
 
   const updates = {};
   if (body.status !== undefined) {
@@ -53,11 +60,47 @@ export async function PATCH(request) {
   if (body.scheduled_date !== undefined) updates.scheduled_date = body.scheduled_date || null;
 
   const db = createServiceClient();
+  let requestAccountId = null;
+  if (body.status === "completed") {
+    const { data: requestRecord, error: requestError } = await db
+      .from("discard_pickup_requests")
+      .select("discard_account_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (requestError) {
+      console.error("Discard request lookup error:", requestError);
+      return NextResponse.json({ error: "Failed to load request." }, { status: 500 });
+    }
+
+    requestAccountId = requestRecord?.discard_account_id || null;
+  }
+
   const { error } = await db.from("discard_pickup_requests").update(updates).eq("id", id);
-  if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
+  if (error) {
+    console.error("Discard request update error:", error);
+    return NextResponse.json({ error: "Update failed." }, { status: 500 });
+  }
+
+  if (body.status === "completed" && requestAccountId) {
+    const { error: legacyPickupError } = await db.from("discard_bag_counts").insert({
+      discard_account_id: requestAccountId,
+      bag_count: 0,
+      entry_type: "pickup",
+      notes: `Picked up by NCT - ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+    });
+
+    if (legacyPickupError) {
+      console.error("Discard pickup reset insert error:", legacyPickupError);
+      return NextResponse.json({ error: "Failed to reset bag count." }, { status: 500 });
+    }
+  }
 
   try {
     await updateCanonicalDiscardPickupRequest(db, id, updates);
+    if (body.status === "completed" && requestAccountId) {
+      await markCanonicalDiscardPickupCollected(db, requestAccountId);
+    }
   } catch (canonicalError) {
     console.error("Canonical discard request update error:", canonicalError);
   }

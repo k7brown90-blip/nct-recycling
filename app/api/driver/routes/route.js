@@ -1,4 +1,9 @@
 import { createServiceClient } from "@/lib/supabase";
+import {
+  completeOperationalStop,
+  getOperationalRoutes,
+  updateOperationalRouteStatus,
+} from "@/lib/organization-operations";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 
@@ -6,6 +11,27 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 function checkAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.DRIVER_PIN}`;
+}
+
+async function ensureShoppingDayOpen(db, shoppingDate) {
+  if (!shoppingDate) return;
+
+  const { data: existingDay } = await db
+    .from("shopping_days")
+    .select("id")
+    .eq("shopping_date", shoppingDate)
+    .maybeSingle();
+
+  if (existingDay?.id) {
+    await db.from("shopping_days").update({ status: "open" }).eq("id", existingDay.id);
+    return;
+  }
+
+  await db.from("shopping_days").insert({
+    shopping_date: shoppingDate,
+    status: "open",
+    route_id: null,
+  });
 }
 
 // GET — calendar view, single date, or active routes
@@ -22,6 +48,29 @@ export async function GET(request) {
     const start = searchParams.get("start");
     const end = searchParams.get("end");
     if (!start || !end) return NextResponse.json({ error: "start and end required." }, { status: 400 });
+
+    try {
+      const routes = await getOperationalRoutes(db, {
+        startDate: start,
+        endDate: end,
+        statuses: ["scheduled", "in_progress", "completed"],
+      });
+
+      if (routes !== null) {
+        const dates = {};
+        for (const route of (routes || []).filter((item) => item.status !== "cancelled")) {
+          dates[route.scheduled_date] = {
+            id: route.id,
+            status: route.status,
+            stop_count: route.stops?.length || 0,
+            completed_count: route.stops?.filter((stop) => stop.stop_status === "completed").length || 0,
+          };
+        }
+        return NextResponse.json({ dates });
+      }
+    } catch (canonicalError) {
+      console.error("Unified driver calendar load error:", canonicalError);
+    }
 
     const { data: routes } = await db
       .from("pickup_routes")
@@ -53,6 +102,16 @@ export async function GET(request) {
 
   // Single date detail
   if (date) {
+    try {
+      const routes = await getOperationalRoutes(db, { scheduledDate: date });
+      if (routes !== null) {
+        const route = (routes || []).find((item) => item.status !== "cancelled") || null;
+        return NextResponse.json({ route });
+      }
+    } catch (canonicalError) {
+      console.error("Unified driver route detail load error:", canonicalError);
+    }
+
     const { data: route } = await db
       .from("pickup_routes")
       .select("*")
@@ -76,6 +135,15 @@ export async function GET(request) {
   }
 
   // Default: active routes (scheduled + in_progress) with full stop detail
+  try {
+    const routes = await getOperationalRoutes(db, { statuses: ["scheduled", "in_progress"] });
+    if (routes !== null) {
+      return NextResponse.json({ routes });
+    }
+  } catch (canonicalError) {
+    console.error("Unified driver active routes load error:", canonicalError);
+  }
+
   const { data: routes, error } = await db
     .from("pickup_routes")
     .select("*")
@@ -115,7 +183,19 @@ export async function PATCH(request) {
   // Complete stop with actual bag count
   if (action === "complete_stop") {
     const { stop_id, nonprofit_id, route_id, actual_bags } = body;
-    if (!stop_id || !nonprofit_id) return NextResponse.json({ error: "Missing fields." }, { status: 400 });
+    if (!stop_id) return NextResponse.json({ error: "Missing stop_id." }, { status: 400 });
+
+    try {
+      const completedStop = await completeOperationalStop(db, stop_id, {
+        actualBags: actual_bags ?? null,
+      });
+
+      if (completedStop) {
+        return NextResponse.json({ success: true, stop: completedStop });
+      }
+    } catch (canonicalError) {
+      console.error("Unified driver stop completion error:", canonicalError);
+    }
 
     await db.from("pickup_route_stops").update({
       stop_status: "completed",
@@ -172,7 +252,20 @@ export async function PATCH(request) {
   // No inventory at this stop
   if (action === "no_inventory_stop") {
     const { stop_id, nonprofit_id, route_id } = body;
-    if (!stop_id || !nonprofit_id) return NextResponse.json({ error: "Missing fields." }, { status: 400 });
+    if (!stop_id) return NextResponse.json({ error: "Missing stop_id." }, { status: 400 });
+
+    try {
+      const completedStop = await completeOperationalStop(db, stop_id, {
+        actualBags: 0,
+        noInventory: true,
+      });
+
+      if (completedStop) {
+        return NextResponse.json({ success: true, consecutive_no_inventory: completedStop.consecutive_no_inventory, stop: completedStop });
+      }
+    } catch (canonicalError) {
+      console.error("Unified driver no-inventory completion error:", canonicalError);
+    }
 
     await db.from("pickup_route_stops").update({
       stop_status: "completed",
@@ -202,6 +295,24 @@ export async function PATCH(request) {
     if (!route_id || !status) return NextResponse.json({ error: "Missing fields." }, { status: 400 });
     const valid = ["in_progress", "completed", "cancelled"];
     if (!valid.includes(status)) return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+
+    try {
+      const updates = await updateOperationalRouteStatus(db, route_id, status);
+      if (updates) {
+        if (status === "completed") {
+          const { data: run } = await db
+            .from("pickup_runs")
+            .select("shopping_date")
+            .eq("id", route_id)
+            .maybeSingle();
+          await ensureShoppingDayOpen(db, run?.shopping_date || null);
+        }
+
+        return NextResponse.json({ success: true, completion_type: updates.completion_type || null });
+      }
+    } catch (canonicalError) {
+      console.error("Unified driver route status update error:", canonicalError);
+    }
 
     if (status === "completed") {
       // Determine completion type: full if all stops done, partial otherwise
