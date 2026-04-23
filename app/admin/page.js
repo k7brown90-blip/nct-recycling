@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
+import AdminOnlineStorePanel from "@/components/AdminOnlineStorePanel";
 import { WORK_CALENDAR_DAYS, WORK_CALENDAR_MONTHS, buildWorkCalendarGrid, getWorkCalendarDateString } from "@/lib/work-calendar";
 
 const STATUS_COLORS = {
@@ -13,7 +14,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Payroll Export", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Shopping Days", "Donation Lots", "Discard Accounts", "Emails"];
+const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Payroll Export", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Online Store", "Donation Lots", "Discard Accounts", "Emails"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -620,7 +621,7 @@ export default function AdminPage() {
     if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
     if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
     if (section === "Exchange Appts") fetchAppointments();
-    if (section === "Shopping Days") fetchShoppingDays();
+    if (section === "Online Store") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
     if (section === "Discard Accounts") fetchDiscardAccounts();
     if (section === "Emails") fetchEmailUsers();
@@ -1422,7 +1423,7 @@ export default function AdminPage() {
       }),
     });
     if (res.ok) {
-      setMessage("✅ Route created and notifications sent to service accounts and resellers.");
+      setMessage("✅ Route created and service accounts notified.");
       setBuildingRoute(false); setRouteDate(""); setRouteTime(""); setRouteNotes(""); setRouteStops([]);
       fetchRoutes();
     } else {
@@ -1652,11 +1653,11 @@ export default function AdminPage() {
                       </p>
                       <p className="text-sm text-gray-500 mt-0.5">{dashboard.next_shopping_day.booking_count} confirmed bookings</p>
                     </div>
-                    <button onClick={() => setSection("Shopping Days")}
-                      className="text-xs text-nct-navy underline hover:text-nct-navy-dark">View →</button>
+                    <button onClick={() => setSection("Online Store")}
+                      className="text-xs text-nct-navy underline hover:text-nct-navy-dark">Store →</button>
                   </div>
                 ) : (
-                  <p className="text-gray-400 text-sm">No upcoming shopping days.</p>
+                  <p className="text-gray-400 text-sm">Storefront access has replaced route-day shopping openings.</p>
                 )}
               </div>
 
@@ -3235,7 +3236,7 @@ export default function AdminPage() {
                 {routeLoading ? "Creating & Notifying…" : `Create Route & Notify (${routeStops.length} stops)`}
               </button>
               <p className="text-xs text-gray-500 text-center mt-2">
-                This will email each organization on the route and all approved resellers.
+                This will email each organization on the route.
               </p>
             </div>
           )}
@@ -3654,9 +3655,17 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ===== SHOPPING DAYS ===== */}
-      {section === "Shopping Days" && (
+      {/* ===== ONLINE STORE ===== */}
+      {section === "Online Store" && (
         <div>
+          <AdminOnlineStorePanel authHeader={authHeader} />
+
+          <details className="mb-6 border border-gray-200 rounded-2xl bg-gray-50">
+            <summary className="cursor-pointer list-none px-5 py-4 flex items-center justify-between font-semibold text-nct-navy">
+              <span>Legacy Shopping Day Archive</span>
+              <span className="text-xs text-gray-400">Retired workflow</span>
+            </summary>
+            <div className="px-5 pb-5">
           <div className="flex gap-2 mb-4 items-center flex-wrap">
             {[["upcoming", "Upcoming"], ["all", "All"]].map(([val, label]) => (
               <button key={val} onClick={() => setShoppingFilter(val)}
@@ -4034,6 +4043,8 @@ export default function AdminPage() {
               })}
             </div>
           )}
+            </div>
+          </details>
         </div>
       )}
       {/* ===== DISCARD ACCOUNTS ===== */}

@@ -33,15 +33,6 @@ export async function GET(request) {
 
   const db = createServiceClient();
 
-  // Get upcoming shopping days (route-based)
-  const { data: shoppingDays } = await db
-    .from("shopping_days")
-    .select("id, shopping_date, status")
-    .eq("status", "open")
-    .gte("shopping_date", start)
-    .lte("shopping_date", end)
-    .order("shopping_date", { ascending: true });
-
   // Build calendar: for each date in range, determine what's open
   const events = [];
   const startDate = new Date(start + "T12:00:00");
@@ -65,15 +56,6 @@ export async function GET(request) {
       // Mon–Thu: boutique always open
       const boutique = { date: dateStr, type: "boutique", label: "Boutique · 12PM–6PM" };
       events.push(boutique);
-      // Check if there's a shopping day (route-triggered bins)
-      const sd = shoppingDays?.find((s) => s.shopping_date === dateStr);
-      if (sd) {
-        if (dow >= 2) {
-          // Tue–Thu: reseller bins + public bins
-          events.push({ date: dateStr, type: "bins_reseller", label: "Reseller Bins · 12PM–4PM (portal required)" });
-          events.push({ date: dateStr, type: "bins_public", label: "Public Bins · 4PM–6PM" });
-        }
-      }
     }
   }
 

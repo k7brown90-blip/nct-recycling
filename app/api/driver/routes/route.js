@@ -13,27 +13,6 @@ function checkAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.DRIVER_PIN}`;
 }
 
-async function ensureShoppingDayOpen(db, shoppingDate) {
-  if (!shoppingDate) return;
-
-  const { data: existingDay } = await db
-    .from("shopping_days")
-    .select("id")
-    .eq("shopping_date", shoppingDate)
-    .maybeSingle();
-
-  if (existingDay?.id) {
-    await db.from("shopping_days").update({ status: "open" }).eq("id", existingDay.id);
-    return;
-  }
-
-  await db.from("shopping_days").insert({
-    shopping_date: shoppingDate,
-    status: "open",
-    route_id: null,
-  });
-}
-
 // GET — calendar view, single date, or active routes
 export async function GET(request) {
   if (!checkAuth(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -299,15 +278,6 @@ export async function PATCH(request) {
     try {
       const updates = await updateOperationalRouteStatus(db, route_id, status);
       if (updates) {
-        if (status === "completed") {
-          const { data: run } = await db
-            .from("pickup_runs")
-            .select("shopping_date")
-            .eq("id", route_id)
-            .maybeSingle();
-          await ensureShoppingDayOpen(db, run?.shopping_date || null);
-        }
-
         return NextResponse.json({ success: true, completion_type: updates.completion_type || null });
       }
     } catch (canonicalError) {
@@ -325,11 +295,6 @@ export async function PATCH(request) {
       const completion_type = allDone ? "full" : "partial";
 
       await db.from("pickup_routes").update({ status: "completed", completion_type }).eq("id", route_id);
-
-      // Ensure shopping day is open (it should already be, but confirm)
-      await db.from("shopping_days").update({ status: "open" })
-        .eq("route_id", route_id)
-        .neq("status", "open");
 
       return NextResponse.json({ success: true, completion_type });
     }

@@ -59,27 +59,6 @@ async function syncLegacyRouteAggregate(db, routeId) {
   return updates;
 }
 
-async function ensureShoppingDayOpen(db, shoppingDate) {
-  if (!shoppingDate) return;
-
-  const { data: existingDay } = await db
-    .from("shopping_days")
-    .select("id")
-    .eq("shopping_date", shoppingDate)
-    .maybeSingle();
-
-  if (existingDay?.id) {
-    await db.from("shopping_days").update({ status: "open" }).eq("id", existingDay.id);
-    return;
-  }
-
-  await db.from("shopping_days").insert({
-    shopping_date: shoppingDate,
-    status: "open",
-    route_id: null,
-  });
-}
-
 // GET — list pickup routes
 export async function GET(request) {
   if (!checkAdminAuth(request)) {
@@ -203,13 +182,7 @@ export async function POST(request) {
     });
 
     if (routeId) {
-      await ensureShoppingDayOpen(db, shopping_date);
-
       const pickupDateStr = new Date(scheduled_date + "T12:00:00").toLocaleDateString("en-US", {
-        weekday: "long", year: "numeric", month: "long", day: "numeric",
-      });
-
-      const shoppingDateStr = new Date(shopping_date + "T12:00:00").toLocaleDateString("en-US", {
         weekday: "long", year: "numeric", month: "long", day: "numeric",
       });
 
@@ -233,32 +206,10 @@ export async function POST(request) {
           }).catch((err) => console.error("Organization route email error:", err))
         );
 
-      const { data: resellers } = await db
-        .from("reseller_applications")
-        .select("email, full_name")
-        .eq("status", "approved");
-
-      const resellerEmails = (resellers || []).map((reseller) =>
-        resend.emails.send({
-          from: "NCT Recycling <donate@nctrecycling.com>",
-          to: reseller.email,
-          subject: `Shopping Day Confirmed - Book Now for ${shoppingDateStr}`,
-          html: `
-            <h2>New Shopping Day Available - Book Your Spot Now</h2>
-            <p>Hi ${reseller.full_name?.split(" ")[0] || "there"},</p>
-            <p>A fresh load is being picked up on <strong>${pickupDateStr}</strong> and shopping opens the next day.</p>
-            <p><strong>Shopping Opens:</strong> ${shoppingDateStr}</p>
-            <p><a href="https://www.nctrecycling.com/reseller/dashboard">Book My Shopping Visit</a></p>
-            <p>- NCT Recycling Team</p>
-          `,
-        }).catch((err) => console.error("Reseller email error:", err))
-      );
-
-      await Promise.allSettled([...organizationEmails, ...resellerEmails]);
+      await Promise.allSettled([...organizationEmails]);
 
       await db.from("pickup_runs").update({
         nonprofits_notified_at: new Date().toISOString(),
-        resellers_notified_at: new Date().toISOString(),
       }).eq("id", routeId);
 
       return NextResponse.json({ success: true, id: routeId });
@@ -297,13 +248,6 @@ export async function POST(request) {
 
   await db.from("pickup_route_stops").insert(stopRows);
 
-  // Auto-create shopping day (day after pickup)
-  await db.from("shopping_days").insert({
-    route_id: route.id,
-    shopping_date: shopping_date,
-    status: "open",
-  });
-
   try {
     await createCanonicalCoOpRoute(db, route.id, {
       scheduled_date,
@@ -339,10 +283,6 @@ export async function POST(request) {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
-  const shoppingDateStr = new Date(shopping_date + "T12:00:00").toLocaleDateString("en-US", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
-  });
-
   // Notify each nonprofit on the route
   const nonprofitEmails = (nonprofits || []).map((np) =>
     resend.emails.send({
@@ -362,58 +302,16 @@ export async function POST(request) {
     }).catch((err) => console.error("Nonprofit email error:", err))
   );
 
-  // Notify all approved resellers — shopping opens the day AFTER pickup
-  const { data: resellers } = await db
-    .from("reseller_applications")
-    .select("email, full_name, business_name")
-    .eq("status", "approved");
-
-  const resellerEmails = (resellers || []).map((r) =>
-    resend.emails.send({
-      from: "NCT Recycling <donate@nctrecycling.com>",
-      to: r.email,
-      subject: `Shopping Day Confirmed — Book Now for ${shoppingDateStr}`,
-      html: `
-        <h2>New Shopping Day Available — Book Your Spot Now</h2>
-        <p>Hi ${r.full_name?.split(" ")[0] || "there"},</p>
-        <p>A fresh load is being picked up on <strong>${pickupDateStr}</strong> and shopping opens the next day.</p>
-        <table style="border-collapse:collapse;width:100%;max-width:500px;margin:16px 0">
-          <tr style="background:#0b2a45;color:white">
-            <td style="padding:10px 16px;font-weight:bold">Pickup Date</td>
-            <td style="padding:10px 16px">${pickupDateStr}</td>
-          </tr>
-          <tr style="background:#f9f5e8">
-            <td style="padding:10px 16px;font-weight:bold;color:#0b2a45">🛒 Shopping Opens</td>
-            <td style="padding:10px 16px;font-weight:bold;color:#d49a22">${shoppingDateStr}</td>
-          </tr>
-        </table>
-        <p><strong>Shopping visits are limited — book your time slot now to secure your spot.</strong></p>
-        <p style="margin-top:16px">
-          <a href="https://www.nctrecycling.com/reseller/dashboard" style="background:#d49a22;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;font-weight:bold;display:inline-block;font-size:16px">
-            Book My Shopping Visit →
-          </a>
-        </p>
-        <p style="margin-top:12px;font-size:13px;color:#666">
-          Questions? <a href="tel:+19702329108" style="color:#0b2a45">(970) 232-9108</a> &nbsp;|&nbsp;
-          <a href="mailto:donate@nctrecycling.com" style="color:#0b2a45">donate@nctrecycling.com</a>
-        </p>
-        <p>— NCT Recycling Team</p>
-      `,
-    }).catch((err) => console.error("Reseller email error:", err))
-  );
-
-  await Promise.allSettled([...nonprofitEmails, ...resellerEmails]);
+  await Promise.allSettled([...nonprofitEmails]);
 
   // Mark notifications sent
   await db.from("pickup_routes").update({
     nonprofits_notified_at: new Date().toISOString(),
-    resellers_notified_at: new Date().toISOString(),
   }).eq("id", route.id);
 
   try {
     await updateCanonicalCoOpRouteStatus(db, route.id, "scheduled", {
       nonprofits_notified_at: new Date().toISOString(),
-      resellers_notified_at: new Date().toISOString(),
     });
   } catch (canonicalError) {
     console.error("Canonical co-op route notification sync error:", canonicalError);
@@ -548,12 +446,6 @@ export async function PATCH(request) {
     try {
       const canonicalUpdates = await updateOperationalRouteStatus(db, route_id, status);
       if (canonicalUpdates) {
-        if (status === "completed") {
-          const canonicalRoutes = await getOperationalRoutes(db, { scheduledDate: null });
-          const route = (canonicalRoutes || []).find((item) => item.id === route_id);
-          await ensureShoppingDayOpen(db, route?.shopping_date || null);
-        }
-
         return NextResponse.json({ success: true });
       }
     } catch (canonicalError) {
