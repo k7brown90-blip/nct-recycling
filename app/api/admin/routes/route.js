@@ -272,6 +272,24 @@ export async function POST(request) {
     nonprofitIds.map((nonprofitId) => updateCanonicalCoOpRequestStatus(db, nonprofitId, "scheduled"))
   );
 
+  const flNonprofitIds = [...new Set(stops.filter((stop) => stop.nonprofit_id && stop.account_type === "fl").map((stop) => stop.nonprofit_id))];
+  if (flNonprofitIds.length > 0) {
+    await db
+      .from("container_pickup_requests")
+      .update({ status: "scheduled", scheduled_date })
+      .in("application_id", flNonprofitIds)
+      .in("status", ["pending", "reviewed"]);
+  }
+
+  const discardAccountIds = [...new Set(stops.map((stop) => stop.discard_account_id).filter(Boolean))];
+  if (discardAccountIds.length > 0) {
+    await db
+      .from("discard_pickup_requests")
+      .update({ status: "scheduled", scheduled_date })
+      .in("discard_account_id", discardAccountIds)
+      .eq("status", "pending");
+  }
+
   // Fetch nonprofit details for notification
   const { data: nonprofits } = await db
     .from("nonprofit_applications")
@@ -395,12 +413,27 @@ export async function PATCH(request) {
       console.error("Canonical co-op pickup completion sync error:", canonicalError);
     }
 
+    await db
+      .from("nonprofit_pickup_requests")
+      .update({ status: "completed" })
+      .eq("nonprofit_id", nonprofit_id)
+      .in("status", ["pending", "scheduled"]);
+
     // Send pickup confirmation email to nonprofit
     if (route_id) {
       const [{ data: np }, { data: route }] = await Promise.all([
-        db.from("nonprofit_applications").select("org_name, contact_name, email").eq("id", nonprofit_id).maybeSingle(),
+        db.from("nonprofit_applications").select("org_name, contact_name, email, account_type").eq("id", nonprofit_id).maybeSingle(),
         db.from("pickup_routes").select("scheduled_date").eq("id", route_id).maybeSingle(),
       ]);
+
+      if (np?.account_type === "fl") {
+        await db
+          .from("container_pickup_requests")
+          .update({ status: "completed" })
+          .eq("application_id", nonprofit_id)
+          .in("status", ["pending", "reviewed", "scheduled"]);
+      }
+
       if (np?.email && route?.scheduled_date) {
         const dateStr = new Date(route.scheduled_date + "T12:00:00").toLocaleDateString("en-US", {
           weekday: "long", year: "numeric", month: "long", day: "numeric",

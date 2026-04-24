@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase";
 import { upsertProfileRecord } from "@/lib/auth-profile";
+import { syncCanonicalCoOpAdminState } from "@/lib/canonical-organizations";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
@@ -15,7 +16,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { application_id, email, full_name, role } = await request.json();
+  const { application_id, email, full_name, role, admin_notes } = await request.json();
 
   if (!application_id || !email || !role) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
@@ -76,14 +77,28 @@ export async function POST(request) {
   // Mark application as approved
   const { data: updatedApplication, error: applicationError } = await db
     .from(role === "nonprofit" ? "nonprofit_applications" : "reseller_applications")
-    .update({ status: "approved", reviewed_at: new Date().toISOString() })
+    .update({
+      status: "approved",
+      admin_notes: admin_notes || null,
+      reviewed_by: "admin",
+      reviewed_at: new Date().toISOString(),
+    })
     .eq("id", application_id)
-    .select("id")
+    .select(role === "nonprofit" ? "*" : "id")
     .maybeSingle();
 
   if (applicationError || !updatedApplication) {
     console.error("Invite application update error:", applicationError);
     return NextResponse.json({ error: "Portal profile created, but application approval failed." }, { status: 500 });
+  }
+
+  if (role === "nonprofit") {
+    try {
+      await syncCanonicalCoOpAdminState(db, updatedApplication);
+    } catch (canonicalError) {
+      console.error("Invite canonical co-op sync error:", canonicalError);
+      return NextResponse.json({ error: "Portal profile created, but canonical co-op activation failed." }, { status: 500 });
+    }
   }
 
   const portalLabel = role === "nonprofit" ? "Nonprofit Partner Portal" : "Retail Partner Portal";

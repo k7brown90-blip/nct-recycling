@@ -14,7 +14,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Payroll Export", "Reseller Apps", "Co-op Apps", "Bag Levels", "Routes", "Exchange Appts", "Online Store", "Donation Lots", "Discard Accounts", "Emails"];
+const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Payroll Export", "Reseller Apps", "Co-op Apps", "Pickup Operations", "Exchange Appts", "Online Store", "Donation Lots", "Emails"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -344,6 +344,7 @@ export default function AdminPage() {
   const [emailUsers, setEmailUsers] = useState([]);
   const [emailUsersLoading, setEmailUsersLoading] = useState(false);
 
+  const isPickupOperations = section === "Pickup Operations";
   const isNonprofit = section === "Co-op Apps";
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
   const applicationFilterOptions = isNonprofit
@@ -611,19 +612,18 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!authed) return;
-    setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]); setBuildingRoute(false);
+    setSelected(null); setSelectedAppt(null); setMessage(""); setApplications([]);
+    if (section !== "Pickup Operations") setBuildingRoute(false);
     if (section === "Dashboard") fetchDashboard();
     if (section === "Employees") fetchEmployees();
     if (section === "Work Calendar") { fetchEmployees(); fetchWorkCalendar(); }
     if (section === "Time Review") fetchTimeReviewEntries();
     if (section === "Payroll Export") fetchPayrollExports();
     if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
-    if (section === "Bag Levels") { fetchBagLevels(); fetchContainerRequests(); }
-    if (section === "Routes") { fetchRoutes(); fetchBagLevels(); }
+    if (section === "Pickup Operations") { fetchBagLevels(); fetchContainerRequests(); fetchRoutes(); fetchDiscardAccounts(); }
     if (section === "Exchange Appts") fetchAppointments();
     if (section === "Online Store") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
-    if (section === "Discard Accounts") fetchDiscardAccounts();
     if (section === "Emails") fetchEmailUsers();
   }, [authed, section, fetchDashboard, fetchEmployees, fetchWorkCalendar, fetchTimeReviewEntries, fetchPayrollExports, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
 
@@ -659,7 +659,7 @@ export default function AdminPage() {
   }, [selectedDiscard?.id, fetchDiscardPickups, fetchDiscardRequests, fetchDiscardBagCount]);
 
   useEffect(() => {
-    if (section !== "Discard Accounts" || !pendingDiscardFocusId || discardAccounts.length === 0) return;
+    if (section !== "Pickup Operations" || !pendingDiscardFocusId || discardAccounts.length === 0) return;
 
     const target = discardAccounts.find((acct) => acct.id === pendingDiscardFocusId);
     if (!target) return;
@@ -740,6 +740,7 @@ export default function AdminPage() {
         email: selected.email,
         full_name: isNonprofit ? selected.contact_name : selected.full_name,
         role: isNonprofit ? "nonprofit" : "reseller",
+        admin_notes: notes,
       }),
     });
     const json = await res.json();
@@ -1213,12 +1214,12 @@ export default function AdminPage() {
 
   function handleOpenDiscardAccount(accountId) {
     if (!accountId) {
-      setSection("Discard Accounts");
+      setSection("Pickup Operations");
       return;
     }
 
     setPendingDiscardFocusId(accountId);
-    setSection("Discard Accounts");
+    setSection("Pickup Operations");
   }
 
   async function handleViewDiscardAgreement(accountId) {
@@ -1286,18 +1287,53 @@ export default function AdminPage() {
   }
 
   async function handleScheduleDiscardRequest(requestRecord) {
-    const suggestedDate = requestRecord.scheduled_date || requestRecord.preferred_date || new Date().toISOString().slice(0, 10);
-    const scheduledDate = window.prompt("Enter the pickup date for this discard request (YYYY-MM-DD):", suggestedDate);
+    const matchingAccount = serviceAccounts.find((account) => account.discard_account_id === selectedDiscard?.id);
 
-    if (scheduledDate === null) return;
+    handleAddAccountToRoute(matchingAccount, {
+      unavailableMessage: "Error: This discard account is not available in Pickup Operations yet.",
+      defaultDate: requestRecord.scheduled_date || requestRecord.preferred_date || new Date().toISOString().slice(0, 10),
+    });
+  }
 
-    const trimmedDate = scheduledDate.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
-      setMessage("Error: Enter the schedule date as YYYY-MM-DD.");
+  function handleScheduleCoOpRequest(nonprofitRecord) {
+    const matchingAccount = serviceAccounts.find((account) => account.nonprofit_id === nonprofitRecord.id);
+
+    handleAddAccountToRoute(matchingAccount, {
+      unavailableMessage: "Error: This co-op account is not available in Pickup Operations yet.",
+      defaultDate: nonprofitRecord.pending_request?.scheduled_date || nonprofitRecord.pending_request?.preferred_date || new Date().toISOString().slice(0, 10),
+    });
+  }
+  function handleAddContainerRequestToRoute(nonprofitRecord, requestRecord) {
+    const matchingAccount = serviceAccounts.find((account) => account.nonprofit_id === nonprofitRecord.id);
+
+    handleAddAccountToRoute(matchingAccount, {
+      unavailableMessage: "Error: This FL co-op account is not available in Pickup Operations yet.",
+      defaultDate: containerScheduleDate || requestRecord.scheduled_date || new Date().toISOString().slice(0, 10),
+    });
+  }
+
+  function handleAddAccountToRoute(account, options = {}) {
+    const {
+      unavailableMessage = "Error: This service account is not available in Pickup Operations yet.",
+      defaultDate,
+    } = options;
+
+    if (!account) {
+      setMessage(unavailableMessage);
       return;
     }
 
-    await handleUpdateDiscardRequest(requestRecord.id, { status: "scheduled", scheduled_date: trimmedDate });
+    const added = addStop(account);
+    setSection("Pickup Operations");
+    setBuildingRoute(true);
+    if (!routeDate) {
+      setRouteDate(defaultDate || new Date().toISOString().slice(0, 10));
+    }
+    setMessage(
+      added
+        ? `✅ Added ${account.org_name} to the route builder. Set the route date there to schedule the pickup.`
+        : `✅ ${account.org_name} is already in the route builder. Update the route date there to schedule the pickup.`
+    );
   }
 
   async function handleSaveDiscardEdits(e) {
@@ -1471,7 +1507,7 @@ export default function AdminPage() {
   }
 
   function addStop(account) {
-    if (routeStops.find((stop) => stop.enrollment_id === account.enrollment_id)) return;
+    if (routeStops.find((stop) => stop.enrollment_id === account.enrollment_id)) return false;
     const requestBags = account.pending_request?.estimated_bags;
     const bagsFill = requestBags ?? account.bag_count ?? account.estimated_bags ?? 0;
     setRouteStops((prev) => [...prev, {
@@ -1491,6 +1527,7 @@ export default function AdminPage() {
       stop_order: prev.length + 1,
       notes: "",
     }]);
+    return true;
   }
 
   async function handleScheduleAppt() {
@@ -1546,6 +1583,9 @@ export default function AdminPage() {
     }
     setApptLoading(false);
   }
+
+  const pendingCoOpPickupRequests = bagLevels.filter((account) => account.pending_request).length;
+  const activeRoutes = routes.filter((route) => route.status === "scheduled" || route.status === "in_progress").length;
 
   if (!authed) {
     return (
@@ -1612,7 +1652,7 @@ export default function AdminPage() {
                   <p className={`text-3xl font-bold ${dashboard.pending_resellers > 0 ? "text-yellow-700" : "text-gray-400"}`}>{dashboard.pending_resellers}</p>
                   <p className="text-xs font-semibold text-gray-600 mt-1">Pending Reseller Apps</p>
                 </button>
-                <button onClick={() => setSection("Bag Levels")}
+                <button onClick={() => setSection("Pickup Operations")}
                   className={`rounded-xl p-4 text-left border-2 transition-colors ${dashboard.pending_pickup_requests > 0 ? "bg-amber-50 border-amber-300 hover:bg-amber-100" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
                   <p className={`text-3xl font-bold ${dashboard.pending_pickup_requests > 0 ? "text-amber-700" : "text-gray-400"}`}>{dashboard.pending_pickup_requests}</p>
                   <p className="text-xs font-semibold text-gray-600 mt-1">Co-op Pickup Requests</p>
@@ -1664,8 +1704,8 @@ export default function AdminPage() {
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Recent Discard Requests</p>
-                  <button onClick={() => setSection("Discard Accounts")}
-                    className="text-xs text-nct-navy underline hover:text-nct-navy-dark">Open Discard Accounts →</button>
+                  <button onClick={() => setSection("Pickup Operations")}
+                    className="text-xs text-nct-navy underline hover:text-nct-navy-dark">Open Pickup Operations →</button>
                 </div>
                 {!dashboard.recent_discard_requests || dashboard.recent_discard_requests.length === 0 ? (
                   <p className="text-gray-400 text-sm">No discard pickup requests yet.</p>
@@ -2862,9 +2902,56 @@ export default function AdminPage() {
         </>
       )}
 
-      {/* ===== BAG LEVELS ===== */}
-      {section === "Bag Levels" && (
+      {/* ===== PICKUP OPERATIONS ===== */}
+      {isPickupOperations && (
         <div>
+          <div className="mb-6 rounded-2xl border border-nct-gold/30 bg-gradient-to-r from-amber-50 via-white to-blue-50 p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-nct-gold">Pickup Operations</p>
+                <h2 className="mt-1 text-2xl font-bold text-nct-navy">Bag levels, route scheduling, and discard servicing in one place.</h2>
+                <p className="mt-2 max-w-3xl text-sm text-gray-600">Build routes from the same operational queue that shows co-op inventory pressure, pending pickup requests, and discard accounts needing service.</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!routeDate) setRouteDate(new Date().toISOString().slice(0, 10));
+                      setBuildingRoute(true);
+                    }}
+                    className="rounded-full bg-nct-navy px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-nct-navy-dark"
+                  >
+                    {buildingRoute ? "Route Builder Open" : "Build Route"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { fetchBagLevels(); fetchContainerRequests(); fetchRoutes(); fetchDiscardAccounts(); }}
+                    className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-200 transition-colors hover:bg-gray-50"
+                  >
+                    Refresh Operations
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl border border-amber-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Co-op Requests</p>
+                  <p className="mt-1 text-2xl font-bold text-amber-700">{pendingCoOpPickupRequests}</p>
+                </div>
+                <div className="rounded-xl border border-blue-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Service Accounts</p>
+                  <p className="mt-1 text-2xl font-bold text-nct-navy">{serviceAccounts.length}</p>
+                </div>
+                <div className="rounded-xl border border-green-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Active Routes</p>
+                  <p className="mt-1 text-2xl font-bold text-green-700">{activeRoutes}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Discard Accounts</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-700">{discardAccounts.length}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-gray-500">Inventory levels across all approved co-op partners.</p>
             <button onClick={() => { fetchBagLevels(); fetchContainerRequests(); }}
@@ -2958,6 +3045,13 @@ export default function AdminPage() {
                                   <span className="text-gray-400 ml-2">Pref: {new Date(np.pending_request.preferred_date + "T12:00:00").toLocaleDateString()}</span>
                                 )}
                                 {np.pending_request.notes && <span className="text-gray-400 ml-2">· {np.pending_request.notes}</span>}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleScheduleCoOpRequest(np)}
+                                      className="ml-3 inline-flex rounded-full bg-nct-navy px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-nct-navy-dark"
+                                    >
+                                      Add to Route
+                                    </button>
                               </div>
                             )}
                           </div>
@@ -3068,7 +3162,7 @@ export default function AdminPage() {
                                     <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
                                       <div className="grid grid-cols-2 gap-2">
                                         <div>
-                                          <label className="text-xs text-gray-500 block mb-0.5">Schedule Date</label>
+                                          <label className="text-xs text-gray-500 block mb-0.5">Suggested Route Date</label>
                                           <input type="date" value={containerScheduleDate}
                                             onChange={(e) => setContainerScheduleDate(e.target.value)}
                                             className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
@@ -3086,10 +3180,9 @@ export default function AdminPage() {
                                           className="flex-1 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 rounded transition-colors">
                                           Mark Reviewed
                                         </button>
-                                        <button onClick={() => handleUpdateContainerRequest(req.id, { status: "scheduled", scheduled_date: containerScheduleDate, admin_notes: containerAdminNotes })}
-                                          disabled={!containerScheduleDate}
-                                          className="flex-1 text-xs bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1.5 rounded transition-colors disabled:opacity-40">
-                                          Schedule Pickup
+                                        <button onClick={() => handleAddContainerRequestToRoute(np, req)}
+                                          className="flex-1 text-xs bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1.5 rounded transition-colors">
+                                          Add to Route
                                         </button>
                                         <button onClick={() => handleUpdateContainerRequest(req.id, { status: "completed", admin_notes: containerAdminNotes })}
                                           className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white font-semibold py-1.5 rounded transition-colors">
@@ -3116,8 +3209,8 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ===== ROUTES ===== */}
-      {section === "Routes" && (
+      {/* ===== ROUTE BUILDER ===== */}
+      {isPickupOperations && (
         <div>
           <div className="flex gap-2 mb-4 items-center">
             {[
@@ -4048,7 +4141,7 @@ export default function AdminPage() {
         </div>
       )}
       {/* ===== DISCARD ACCOUNTS ===== */}
-      {section === "Discard Accounts" && (
+      {isPickupOperations && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-500">Organizations that sell discard directly instead of joining the co-op.</p>
@@ -4568,7 +4661,7 @@ export default function AdminPage() {
                                           {req.status === "pending" && (
                                             <button onClick={() => handleScheduleDiscardRequest(req)}
                                               className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors">
-                                              Schedule
+                                              Add to Route
                                             </button>
                                           )}
                                           <button onClick={() => handleUpdateDiscardRequest(req.id, { status: "completed" })}
