@@ -96,6 +96,19 @@ export default function ResellerCartClient({ initialReseller }) {
     }) || null;
   }, [ordersData]);
 
+  const recentOrders = useMemo(() => {
+    const orders = ordersData?.orders || [];
+
+    return orders
+      .filter((order) => {
+        if (!pendingCheckout) return true;
+        if (pendingCheckout.id && order.id === pendingCheckout.id) return false;
+        if (pendingCheckout.legacyId && order.legacyId === pendingCheckout.legacyId) return false;
+        return true;
+      })
+      .slice(0, 5);
+  }, [ordersData, pendingCheckout]);
+
   const cartSubtotal = cartDetails.reduce((sum, item) => sum + ((item.variant?.price || 0) * item.quantity), 0);
   const checkoutSupported = Boolean(catalogData?.checkout_supported);
 
@@ -326,7 +339,7 @@ export default function ResellerCartClient({ initialReseller }) {
           <div className="bg-white border border-gray-200 rounded-2xl p-5">
             <p className="text-sm font-semibold text-nct-navy mb-4">Recent Orders</p>
             <div className="space-y-3">
-              {(ordersData?.orders || []).slice(0, 5).map((order) => (
+              {recentOrders.map((order) => (
                 <div key={order.id} className="border border-gray-200 rounded-xl p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -342,7 +355,7 @@ export default function ResellerCartClient({ initialReseller }) {
                   )}
                 </div>
               ))}
-              {(!ordersData?.orders || ordersData.orders.length === 0) && (
+              {recentOrders.length === 0 && (
                 <p className="text-sm text-gray-500">Orders will appear here once you create and complete portal orders.</p>
               )}
             </div>
