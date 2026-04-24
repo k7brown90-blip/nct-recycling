@@ -120,9 +120,16 @@ export default function ResellerCartClient({ initialReseller }) {
       return;
     }
 
-    setCheckoutResult(json.order || null);
+    const createdOrder = json.order || null;
     clearCart();
     setCheckoutNote("");
+
+    if (createdOrder?.invoice_url) {
+      window.location.assign(createdOrder.invoice_url);
+      return;
+    }
+
+    setCheckoutResult(createdOrder);
     setCheckoutBusy(false);
 
     try {
@@ -275,7 +282,7 @@ export default function ResellerCartClient({ initialReseller }) {
                   </div>
                   {order.orderStatusUrl && (
                     <a href={order.orderStatusUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-xs text-nct-navy underline mt-2">
-                      View status ↗
+                      {order.invoiceUrl || order.financialStatus === "awaiting_payment" ? "Continue checkout ↗" : "View status ↗"}
                     </a>
                   )}
                 </div>
