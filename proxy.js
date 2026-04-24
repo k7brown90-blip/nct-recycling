@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 
-export async function middleware(request) {
+export async function proxy(request) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -25,7 +25,6 @@ export async function middleware(request) {
 
   const { pathname } = request.nextUrl;
 
-  // Protect reseller, nonprofit, and account routes
   if (
     pathname.startsWith("/reseller") ||
     pathname.startsWith("/nonprofit/dashboard") ||
@@ -39,7 +38,6 @@ export async function middleware(request) {
     }
   }
 
-  // Redirect logged-in users away from login page
   if (pathname === "/login" && user) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = "/dashboard";
