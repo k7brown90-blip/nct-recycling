@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 export default function OnlineStorePreview({ variant = "partner" }) {
   const [data, setData] = useState(null);
@@ -47,6 +48,7 @@ export default function OnlineStorePreview({ variant = "partner" }) {
   const featured = data?.featured_products || [];
   const summary = data?.summary || {};
   const compact = variant === "partner";
+  const showPublicPortalCta = variant === "public";
 
   return (
     <div className="space-y-5">
@@ -66,7 +68,22 @@ export default function OnlineStorePreview({ variant = "partner" }) {
               Booking-based reseller openings are retired. NCT now sorts route inventory on site and publishes curated wholesale lots online through Shopify.
             </p>
           </div>
-          {data?.store_url ? (
+          {showPublicPortalCta ? (
+            <div className="flex flex-col gap-2 sm:min-w-[270px]">
+              <Link
+                href="/login?next=/reseller/store"
+                className="inline-flex items-center justify-center bg-nct-navy hover:bg-nct-navy-dark text-white font-semibold px-5 py-3 rounded-xl transition-colors"
+              >
+                Approved Reseller Login
+              </Link>
+              <Link
+                href="/apply"
+                className="inline-flex items-center justify-center border border-nct-navy text-nct-navy hover:bg-nct-navy hover:text-white font-semibold px-5 py-3 rounded-xl transition-colors"
+              >
+                New Buyer? Apply First
+              </Link>
+            </div>
+          ) : data?.store_url ? (
             <a
               href={data.store_url}
               target="_blank"
@@ -81,6 +98,12 @@ export default function OnlineStorePreview({ variant = "partner" }) {
             </div>
           )}
         </div>
+
+        {showPublicPortalCta && (
+          <p className="mt-4 text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+            Approved resellers shop through the NCT portal. New buyers should apply first and will receive access after approval.
+          </p>
+        )}
 
         {data?.warning && (
           <p className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">{data.warning}</p>

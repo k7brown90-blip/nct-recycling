@@ -1,4 +1,4 @@
-import { getCurrentResellerContext } from "@/lib/reseller-auth";
+import { canAccessResellerStore, getCurrentResellerContext } from "@/lib/reseller-auth";
 import { createShopifyDraftOrder, fetchShopifyCatalog } from "@/lib/shopify";
 import { NextResponse } from "next/server";
 
@@ -22,8 +22,8 @@ export async function POST(request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  if (!reseller) {
-    return NextResponse.json({ error: "Not a reseller account." }, { status: 403 });
+  if (!canAccessResellerStore(reseller)) {
+    return NextResponse.json({ error: "Approved reseller access is required." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({}));

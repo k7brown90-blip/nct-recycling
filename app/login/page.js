@@ -1,15 +1,19 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const requestedNext = searchParams.get("next");
+  const nextPath = requestedNext && requestedNext.startsWith("/") ? requestedNext : "/dashboard";
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -25,7 +29,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(nextPath);
     router.refresh();
   }
 
@@ -35,7 +39,7 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-nct-navy mb-2">Portal Login</h1>
           <p className="text-gray-600 text-sm">
-            Sign in to your NCT Recycling account.
+            Approved resellers can sign in here to browse curated inventory, manage their cart, and submit orders from the portal.
           </p>
         </div>
 
@@ -78,12 +82,17 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
-          Don't have an account?{" "}
-          <Link href="/apply" className="text-nct-navy underline">
-            Submit a partner application
-          </Link>
-        </p>
+        <div className="text-center text-sm text-gray-500 mt-6 space-y-2">
+          <p>
+            New reseller or wholesale buyer?{" "}
+            <Link href="/apply" className="text-nct-navy underline">
+              Submit a partner application
+            </Link>
+          </p>
+          <p className="text-xs text-gray-400">
+            Access is granted after approval. Once approved, return here to sign in and shop.
+          </p>
+        </div>
       </div>
     </main>
   );

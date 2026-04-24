@@ -1,5 +1,7 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useResellerCart } from "@/lib/use-reseller-cart";
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -27,20 +29,6 @@ function buildPlaceholder(productType) {
   );
 }
 
-function loadStoredCart(resellerId) {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const saved = window.localStorage.getItem(`nct-reseller-cart:${resellerId || "guest"}`);
-    if (!saved) return [];
-
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function ResellerStoreClient({ initialReseller }) {
   const [catalogData, setCatalogData] = useState(null);
   const [ordersData, setOrdersData] = useState(null);
@@ -50,13 +38,8 @@ export default function ResellerStoreClient({ initialReseller }) {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedVariantId, setSelectedVariantId] = useState("");
-  const [cart, setCart] = useState(() => loadStoredCart(initialReseller?.id));
-  const [checkoutNote, setCheckoutNote] = useState("");
-  const [checkoutBusy, setCheckoutBusy] = useState(false);
-  const [checkoutResult, setCheckoutResult] = useState(null);
-  const [checkoutError, setCheckoutError] = useState("");
   const resellerId = initialReseller?.id || "guest";
-  const cartStorageKey = `nct-reseller-cart:${resellerId}`;
+  const { cart, itemCount, addItem } = useResellerCart(resellerId);
 
   useEffect(() => {
     let active = true;
@@ -93,12 +76,6 @@ export default function ResellerStoreClient({ initialReseller }) {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(cartStorageKey, JSON.stringify(cart));
-    } catch {}
-  }, [cart, cartStorageKey]);
 
   const products = useMemo(() => catalogData?.products || [], [catalogData]);
   const categories = useMemo(() => {
@@ -149,73 +126,7 @@ export default function ResellerStoreClient({ initialReseller }) {
 
   function addToCart(product, variant) {
     if (!variant?.legacyId || !checkoutSupported) return;
-
-    setCheckoutError("");
-    setCheckoutResult(null);
-    setCart((current) => {
-      const existing = current.find((entry) => entry.productId === product.id && entry.variantLegacyId === variant.legacyId);
-      if (existing) {
-        return current.map((entry) => entry.productId === product.id && entry.variantLegacyId === variant.legacyId
-          ? { ...entry, quantity: Math.min(entry.quantity + 1, 99) }
-          : entry);
-      }
-
-      return current.concat({
-        productId: product.id,
-        variantLegacyId: variant.legacyId,
-        quantity: 1,
-      });
-    });
-  }
-
-  function updateCartQuantity(productId, variantLegacyId, quantity) {
-    if (quantity <= 0) {
-      setCart((current) => current.filter((entry) => !(entry.productId === productId && entry.variantLegacyId === variantLegacyId)));
-      return;
-    }
-
-    setCart((current) => current.map((entry) => entry.productId === productId && entry.variantLegacyId === variantLegacyId
-      ? { ...entry, quantity: Math.min(quantity, 99) }
-      : entry));
-  }
-
-  async function handleCheckout() {
-    if (cartDetails.length === 0 || !checkoutSupported) return;
-
-    setCheckoutBusy(true);
-    setCheckoutError("");
-    setCheckoutResult(null);
-
-    const response = await fetch("/api/reseller/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items: cartDetails.map((item) => ({
-          productId: item.productId,
-          variantLegacyId: item.variantLegacyId,
-          quantity: item.quantity,
-        })),
-        note: checkoutNote,
-      }),
-    });
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      setCheckoutError(json.error || "Checkout failed.");
-      setCheckoutBusy(false);
-      return;
-    }
-
-    setCheckoutResult(json.order || null);
-    setCart([]);
-    setCheckoutNote("");
-    setCheckoutBusy(false);
-
-    try {
-      const refreshedOrders = await fetch("/api/reseller/orders").then((result) => result.json());
-      setOrdersData(refreshedOrders);
-    } catch {}
+    addItem(product.id, variant.legacyId);
   }
 
   const selectedVariant = selectedProduct?.variants?.find((variant) => String(variant.legacyId || "") === String(selectedVariantId || "")) || selectedProduct?.variants?.[0] || null;
@@ -239,10 +150,14 @@ export default function ResellerStoreClient({ initialReseller }) {
               Shopify manages the underlying catalog and inventory quantities. Your reseller account stays in the NCT portal while orders are created directly in Shopify behind the scenes.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 min-w-[220px]">
+          <div className="grid grid-cols-3 gap-3 min-w-[320px]">
             <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-gray-400">Products</p>
               <p className="text-xl font-bold text-nct-navy">{catalogData?.summary?.totalProducts || 0}</p>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-gray-400">Cart</p>
+              <p className="text-xl font-bold text-nct-navy">{itemCount}</p>
             </div>
             <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-gray-400">Paid Orders</p>
@@ -337,14 +252,14 @@ export default function ResellerStoreClient({ initialReseller }) {
                 <p className="text-sm font-semibold text-nct-navy">Cart</p>
                 <p className="text-xs text-gray-500">Stored in this browser for {initialReseller?.business_name || initialReseller?.full_name || "your reseller account"}.</p>
               </div>
-              <span className="text-sm font-semibold text-gray-500">{cartDetails.reduce((sum, item) => sum + item.quantity, 0)} items</span>
+              <span className="text-sm font-semibold text-gray-500">{itemCount} items</span>
             </div>
 
             {cartDetails.length === 0 ? (
-              <p className="text-sm text-gray-500">Your cart is empty. Add products from the catalog to start a draft checkout.</p>
+              <p className="text-sm text-gray-500">Your cart is empty. Add products from the catalog, then open the cart page to review and checkout.</p>
             ) : (
               <div className="space-y-3">
-                {cartDetails.map((item) => (
+                {cartDetails.slice(0, 3).map((item) => (
                   <div key={`${item.productId}-${item.variantLegacyId}`} className="border border-gray-200 rounded-xl p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -352,48 +267,24 @@ export default function ResellerStoreClient({ initialReseller }) {
                         <p className="text-xs text-gray-500">{item.variant.title}</p>
                         <p className="text-xs text-gray-500 mt-1">{formatCurrency(item.variant.price, item.product.currencyCode)}</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => updateCartQuantity(item.productId, item.variantLegacyId, item.quantity - 1)} className="w-8 h-8 rounded-full border border-gray-300 text-gray-600">-</button>
-                        <span className="text-sm font-semibold w-6 text-center">{item.quantity}</span>
-                        <button onClick={() => updateCartQuantity(item.productId, item.variantLegacyId, item.quantity + 1)} className="w-8 h-8 rounded-full border border-gray-300 text-gray-600">+</button>
-                      </div>
+                      <span className="text-sm font-semibold text-nct-navy">x{item.quantity}</span>
                     </div>
                   </div>
                 ))}
-
-                <textarea
-                  value={checkoutNote}
-                  onChange={(event) => setCheckoutNote(event.target.value)}
-                  rows={3}
-                  placeholder="Optional order note for NCT"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm"
-                />
+                {cartDetails.length > 3 && (
+                  <p className="text-xs text-gray-500">+{cartDetails.length - 3} more item{cartDetails.length - 3 === 1 ? "" : "s"} in cart</p>
+                )}
 
                 <div className="flex items-center justify-between text-sm font-semibold text-gray-700">
                   <span>Subtotal</span>
                   <span>{formatCurrency(cartSubtotal, cartDetails[0]?.product?.currencyCode || "USD")}</span>
                 </div>
-
-                {checkoutError && <p className="text-sm text-red-500">{checkoutError}</p>}
-                {checkoutResult && (
-                  <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-3 space-y-2">
-                    <p className="font-semibold">{checkoutResult.name} created successfully.</p>
-                    <p>NCT created the Shopify draft order without requiring a second login.</p>
-                    {checkoutResult.invoice_url && (
-                      <a href={checkoutResult.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex text-nct-navy underline">
-                        Open payment link ↗
-                      </a>
-                    )}
-                  </div>
-                )}
-
-                <button
-                  onClick={handleCheckout}
-                  disabled={checkoutBusy || cartDetails.length === 0 || !checkoutSupported}
-                  className="w-full bg-nct-gold hover:bg-nct-gold-dark text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-40"
+                <Link
+                  href="/reseller/store/cart"
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-nct-gold px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-nct-gold-dark"
                 >
-                  {checkoutBusy ? "Creating Shopify checkout…" : "Create Shopify Checkout"}
-                </button>
+                  Review Cart & Checkout
+                </Link>
               </div>
             )}
           </div>

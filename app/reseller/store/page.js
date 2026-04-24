@@ -2,15 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import ResellerStoreClient from "@/components/ResellerStoreClient";
 import SignOutButton from "@/components/SignOutButton";
-import { getCurrentResellerContext } from "@/lib/reseller-auth";
+import { canAccessResellerStore, getCurrentResellerContext } from "@/lib/reseller-auth";
 
 export const metadata = { title: "Reseller Store" };
 
 export default async function ResellerStorePage() {
   const { user, reseller } = await getCurrentResellerContext();
 
-  if (!user) redirect("/login");
-  if (!reseller) redirect("/dashboard");
+  if (!user) redirect("/login?next=/reseller/store");
+  if (!canAccessResellerStore(reseller)) redirect("/dashboard");
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-10">
@@ -23,7 +23,12 @@ export default async function ResellerStorePage() {
           <h1 className="text-3xl font-bold text-nct-navy">{reseller.business_name || reseller.full_name}</h1>
           <p className="text-sm text-gray-500 mt-1">{user.email}</p>
         </div>
-        <SignOutButton />
+        <div className="flex items-center gap-3">
+          <Link href="/reseller/store/cart" className="inline-flex items-center justify-center rounded-xl border border-nct-navy px-4 py-2.5 text-sm font-semibold text-nct-navy transition-colors hover:bg-nct-navy hover:text-white">
+            View Cart
+          </Link>
+          <SignOutButton />
+        </div>
       </div>
 
       <ResellerStoreClient initialReseller={reseller} />

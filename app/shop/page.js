@@ -17,6 +17,9 @@ export default function ShopPage() {
           NCT now sorts route inventory on site and releases curated wholesale and reseller drops through the online store.
           In-person shopping is still available through the boutique and public pound bins, but reseller booking windows are retired.
         </p>
+        <p className="max-w-2xl mx-auto text-sm text-gray-500 leading-relaxed mt-4">
+          Approved resellers should sign in to shop from the portal. If you are new to NCT, apply first and we will review your account before enabling store access.
+        </p>
       </section>
 
       <OnlineStorePreview variant="public" />
