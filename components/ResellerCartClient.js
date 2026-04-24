@@ -89,6 +89,13 @@ export default function ResellerCartClient({ initialReseller }) {
     }).filter((item) => item.product && item.variant);
   }, [cart, productLookup]);
 
+  const pendingCheckout = useMemo(() => {
+    return (ordersData?.orders || []).find((order) => {
+      const financialStatus = String(order.financialStatus || "").toLowerCase();
+      return order.orderStatusUrl && (financialStatus === "awaiting_payment" || financialStatus === "pending");
+    }) || null;
+  }, [ordersData]);
+
   const cartSubtotal = cartDetails.reduce((sum, item) => sum + ((item.variant?.price || 0) * item.quantity), 0);
   const checkoutSupported = Boolean(catalogData?.checkout_supported);
 
@@ -185,7 +192,11 @@ export default function ResellerCartClient({ initialReseller }) {
           {cartDetails.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
               <p className="text-lg font-semibold text-nct-navy">Your cart is empty.</p>
-              <p className="text-sm text-gray-500 mt-2">Browse the protected reseller catalog to add curated lots and bring them back here for checkout.</p>
+              <p className="text-sm text-gray-500 mt-2">
+                {pendingCheckout
+                  ? "Your browser cart has been cleared, but you still have an unpaid Shopify checkout below that you can reopen and finish."
+                  : "Browse the protected reseller catalog to add curated lots and bring them back here for checkout."}
+              </p>
               <Link
                 href="/reseller/store"
                 className="mt-5 inline-flex items-center justify-center rounded-xl bg-nct-navy px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-nct-navy-dark"
@@ -267,6 +278,50 @@ export default function ResellerCartClient({ initialReseller }) {
               {checkoutBusy ? "Creating your order…" : "Create Order In Portal"}
             </button>
           </div>
+
+          {pendingCheckout && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-nct-navy">Pending Checkout</p>
+                  <p className="text-xs text-gray-500 mt-1">{pendingCheckout.name} created {formatDate(pendingCheckout.createdAt)}</p>
+                </div>
+                <span className="text-[11px] px-2 py-1 rounded-full bg-white text-amber-700 border border-amber-200 capitalize">
+                  {pendingCheckout.financialStatus.replace(/_/g, " ")}
+                </span>
+              </div>
+
+              {pendingCheckout.items?.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {pendingCheckout.items.map((item) => (
+                    <div key={item.id} className="flex items-start justify-between gap-3 rounded-xl bg-white px-3 py-2 border border-amber-100">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {item.variantTitle ? `${item.variantTitle} • ` : ""}Qty {item.quantity}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-nct-gold">{formatCurrency((item.price || 0) * item.quantity, pendingCheckout.currencyCode)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <p className="text-sm text-gray-600">
+                  Total <span className="font-semibold text-gray-900">{formatCurrency(pendingCheckout.totalPrice, pendingCheckout.currencyCode)}</span>
+                </p>
+                <a
+                  href={pendingCheckout.orderStatusUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-xl bg-nct-gold px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-nct-gold-dark"
+                >
+                  Continue Checkout
+                </a>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white border border-gray-200 rounded-2xl p-5">
             <p className="text-sm font-semibold text-nct-navy mb-4">Recent Orders</p>
