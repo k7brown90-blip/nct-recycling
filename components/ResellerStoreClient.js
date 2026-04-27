@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useResellerCart } from "@/lib/use-reseller-cart";
 
 /* eslint-disable @next/next/no-img-element */
@@ -18,6 +18,13 @@ function formatCurrency(value, currencyCode = "USD") {
 function formatDate(value) {
   if (!value) return "Pending";
   return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatTimeRemaining(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function buildPlaceholder(productType) {
@@ -38,25 +45,30 @@ export default function ResellerStoreClient({ initialReseller }) {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedVariantId, setSelectedVariantId] = useState("");
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const resellerId = initialReseller?.id || "guest";
-  const { cart, itemCount, addItem } = useResellerCart(resellerId);
+  const { cart, itemCount, pendingDraft, addItem, clearCart, clearPendingDraft } = useResellerCart(resellerId);
+
+  const loadStoreData = useCallback(async () => {
+    const [catalogResponse, ordersResponse] = await Promise.all([
+      fetch("/api/reseller/catalog", { cache: "no-store" }),
+      fetch("/api/reseller/orders", { cache: "no-store" }),
+    ]);
+
+    const catalogJson = await catalogResponse.json();
+    if (!catalogResponse.ok) throw new Error(catalogJson.error || "Failed to load catalog.");
+
+    const ordersJson = await ordersResponse.json();
+    if (!ordersResponse.ok) throw new Error(ordersJson.error || "Failed to load orders.");
+
+    return { catalogJson, ordersJson };
+  }, []);
 
   useEffect(() => {
     let active = true;
 
-    Promise.all([
-      fetch("/api/reseller/catalog").then(async (response) => {
-        const json = await response.json();
-        if (!response.ok) throw new Error(json.error || "Failed to load catalog.");
-        return json;
-      }),
-      fetch("/api/reseller/orders").then(async (response) => {
-        const json = await response.json();
-        if (!response.ok) throw new Error(json.error || "Failed to load orders.");
-        return json;
-      }),
-    ])
-      .then(([catalogJson, ordersJson]) => {
+    loadStoreData()
+      .then(({ catalogJson, ordersJson }) => {
         if (!active) return;
         setCatalogData(catalogJson);
         setOrdersData(ordersJson);
@@ -75,7 +87,7 @@ export default function ResellerStoreClient({ initialReseller }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadStoreData]);
 
   const products = useMemo(() => catalogData?.products || [], [catalogData]);
   const categories = useMemo(() => {
@@ -118,6 +130,73 @@ export default function ResellerStoreClient({ initialReseller }) {
 
   const cartSubtotal = cartDetails.reduce((sum, item) => sum + ((item.variant?.price || 0) * item.quantity), 0);
   const checkoutSupported = Boolean(catalogData?.checkout_supported);
+  const pendingCheckout = useMemo(() => {
+    return (ordersData?.orders || []).find((order) => {
+      const financialStatus = String(order.financialStatus || "").toLowerCase();
+      return order.orderStatusUrl && (financialStatus === "awaiting_payment" || financialStatus === "pending");
+    }) || null;
+  }, [ordersData]);
+  const pendingCheckoutRemainingMs = useMemo(() => {
+    if (!pendingCheckout?.expiresAt) return 0;
+    return Math.max(0, new Date(pendingCheckout.expiresAt).getTime() - nowMs);
+  }, [nowMs, pendingCheckout]);
+
+  useEffect(() => {
+    if (!pendingCheckout?.expiresAt) return undefined;
+
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [pendingCheckout?.expiresAt]);
+
+  useEffect(() => {
+    if (!pendingDraft?.draftId) return undefined;
+
+    let active = true;
+
+    async function refreshPendingDraftStatus() {
+      const response = await fetch(`/api/reseller/orders/${pendingDraft.draftId}`, { cache: "no-store" });
+
+      if (!active) return;
+
+      if (response.status === 404) {
+        clearPendingDraft();
+        const refreshed = await loadStoreData().catch(() => null);
+        if (refreshed) {
+          setCatalogData(refreshed.catalogJson);
+          setOrdersData(refreshed.ordersJson);
+        }
+        return;
+      }
+
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return;
+      }
+
+      if (json.order?.financialStatus === "paid") {
+        clearCart();
+        clearPendingDraft();
+        const refreshed = await loadStoreData().catch(() => null);
+        if (refreshed) {
+          setCatalogData(refreshed.catalogJson);
+          setOrdersData(refreshed.ordersJson);
+        }
+      }
+    }
+
+    refreshPendingDraftStatus().catch(() => {});
+    const intervalId = window.setInterval(() => {
+      refreshPendingDraftStatus().catch(() => {});
+    }, 30000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [clearCart, clearPendingDraft, loadStoreData, pendingDraft?.draftId]);
 
   function openProduct(product) {
     setSelectedProduct(product);
@@ -125,7 +204,7 @@ export default function ResellerStoreClient({ initialReseller }) {
   }
 
   function addToCart(product, variant) {
-    if (!variant?.legacyId || !checkoutSupported) return;
+    if (!variant?.legacyId || !checkoutSupported || pendingCheckout) return;
     addItem(product.id, variant.legacyId);
   }
 
@@ -202,7 +281,7 @@ export default function ResellerStoreClient({ initialReseller }) {
           <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">
             {filteredProducts.map((product) => {
               const defaultVariant = product.variants?.[0] || null;
-              const inventoryLabel = product.inventory > 0 ? `${product.inventory} in stock` : "Inventory pending";
+              const inventoryLabel = product.inventory > 0 ? `${product.inventory} in stock` : "Reserved / out of stock";
 
               return (
                 <div key={product.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col">
@@ -231,10 +310,10 @@ export default function ResellerStoreClient({ initialReseller }) {
                         </button>
                         <button
                           onClick={() => addToCart(product, defaultVariant)}
-                          disabled={!checkoutSupported || !defaultVariant?.legacyId}
+                          disabled={!checkoutSupported || !defaultVariant?.legacyId || Number(product.inventory || 0) <= 0 || Boolean(pendingCheckout)}
                           className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white font-medium px-4 py-2.5 rounded-xl transition-colors text-sm disabled:opacity-40"
                         >
-                          Add to cart
+                          {pendingCheckout ? "Pending Checkout Active" : "Add to cart"}
                         </button>
                       </div>
                     </div>
@@ -256,7 +335,16 @@ export default function ResellerStoreClient({ initialReseller }) {
             </div>
 
             {cartDetails.length === 0 ? (
-              <p className="text-sm text-gray-500">Your cart is empty. Add products from the catalog, then open the cart page to review and checkout.</p>
+              <div className="space-y-2">
+                <p className="text-sm text-gray-500">
+                  {pendingCheckout
+                    ? "Your cart items are reserved in a pending checkout. Open the cart page to finish or cancel it before creating a new order."
+                    : "Your cart is empty. Add products from the catalog, then open the cart page to review and checkout."}
+                </p>
+                {pendingCheckout && (
+                  <p className="text-xs text-amber-700">Reservation expires in {formatTimeRemaining(pendingCheckoutRemainingMs)}.</p>
+                )}
+              </div>
             ) : (
               <div className="space-y-3">
                 {cartDetails.slice(0, 3).map((item) => (
@@ -279,6 +367,9 @@ export default function ResellerStoreClient({ initialReseller }) {
                   <span>Subtotal</span>
                   <span>{formatCurrency(cartSubtotal, cartDetails[0]?.product?.currencyCode || "USD")}</span>
                 </div>
+                {pendingCheckout && (
+                  <p className="text-xs text-amber-700">This cart is reserved in Shopify for {formatTimeRemaining(pendingCheckoutRemainingMs)}.</p>
+                )}
                 <Link
                   href="/reseller/store/cart"
                   className="inline-flex w-full items-center justify-center rounded-xl bg-nct-gold px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-nct-gold-dark"
@@ -304,7 +395,7 @@ export default function ResellerStoreClient({ initialReseller }) {
                   </div>
                   {order.orderStatusUrl && (
                     <a href={order.orderStatusUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-xs text-nct-navy underline mt-2">
-                      View status ↗
+                      {order.invoiceUrl || order.financialStatus === "awaiting_payment" ? "Continue checkout ↗" : "View status ↗"}
                     </a>
                   )}
                 </div>
@@ -366,10 +457,10 @@ export default function ResellerStoreClient({ initialReseller }) {
                 <div className="flex gap-3">
                   <button
                     onClick={() => addToCart(selectedProduct, selectedVariant)}
-                    disabled={!checkoutSupported || !selectedVariant?.legacyId}
+                    disabled={!checkoutSupported || !selectedVariant?.legacyId || Number(selectedVariant?.inventory ?? selectedProduct.inventory ?? 0) <= 0 || Boolean(pendingCheckout)}
                     className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-40"
                   >
-                    Add to cart
+                    {pendingCheckout ? "Pending Checkout Active" : "Add to cart"}
                   </button>
                   <button onClick={() => setSelectedProduct(null)} className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 font-bold py-3 rounded-xl transition-colors">
                     Continue browsing

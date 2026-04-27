@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useResellerCart } from "@/lib/use-reseller-cart";
 
 function formatCurrency(value, currencyCode = "USD") {
@@ -19,6 +19,13 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function formatTimeRemaining(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 export default function ResellerCartClient({ initialReseller }) {
   const [catalogData, setCatalogData] = useState(null);
   const [ordersData, setOrdersData] = useState(null);
@@ -28,25 +35,35 @@ export default function ResellerCartClient({ initialReseller }) {
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutResult, setCheckoutResult] = useState(null);
   const [checkoutError, setCheckoutError] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const resellerId = initialReseller?.id || "guest";
-  const { cart, itemCount, updateQuantity, removeItem, clearCart } = useResellerCart(resellerId);
+  const { cart, itemCount, pendingDraft, updateQuantity, removeItem, clearCart, setPendingDraft, clearPendingDraft } = useResellerCart(resellerId);
+
+  const loadResellerData = useCallback(async () => {
+    const [catalogResponse, ordersResponse] = await Promise.all([
+      fetch("/api/reseller/catalog", { cache: "no-store" }),
+      fetch("/api/reseller/orders", { cache: "no-store" }),
+    ]);
+
+    const catalogJson = await catalogResponse.json();
+    if (!catalogResponse.ok) {
+      throw new Error(catalogJson.error || "Failed to load catalog.");
+    }
+
+    const ordersJson = await ordersResponse.json();
+    if (!ordersResponse.ok) {
+      throw new Error(ordersJson.error || "Failed to load orders.");
+    }
+
+    return { catalogJson, ordersJson };
+  }, []);
 
   useEffect(() => {
     let active = true;
 
-    Promise.all([
-      fetch("/api/reseller/catalog").then(async (response) => {
-        const json = await response.json();
-        if (!response.ok) throw new Error(json.error || "Failed to load catalog.");
-        return json;
-      }),
-      fetch("/api/reseller/orders").then(async (response) => {
-        const json = await response.json();
-        if (!response.ok) throw new Error(json.error || "Failed to load orders.");
-        return json;
-      }),
-    ])
-      .then(([catalogJson, ordersJson]) => {
+    loadResellerData()
+      .then(({ catalogJson, ordersJson }) => {
         if (!active) return;
         setCatalogData(catalogJson);
         setOrdersData(ordersJson);
@@ -65,7 +82,7 @@ export default function ResellerCartClient({ initialReseller }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadResellerData]);
 
   const products = useMemo(() => catalogData?.products || [], [catalogData]);
 
@@ -111,9 +128,97 @@ export default function ResellerCartClient({ initialReseller }) {
 
   const cartSubtotal = cartDetails.reduce((sum, item) => sum + ((item.variant?.price || 0) * item.quantity), 0);
   const checkoutSupported = Boolean(catalogData?.checkout_supported);
+  const pendingCheckoutRemainingMs = useMemo(() => {
+    if (!pendingCheckout?.expiresAt) return 0;
+    return Math.max(0, new Date(pendingCheckout.expiresAt).getTime() - nowMs);
+  }, [nowMs, pendingCheckout]);
+
+  useEffect(() => {
+    if (!pendingCheckout?.expiresAt) return undefined;
+
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [pendingCheckout?.expiresAt]);
+
+  useEffect(() => {
+    if (!pendingDraft?.draftId) return undefined;
+
+    let active = true;
+
+    async function refreshPendingDraftStatus() {
+      const response = await fetch(`/api/reseller/orders/${pendingDraft.draftId}`, { cache: "no-store" });
+
+      if (!active) return;
+
+      if (response.status === 404) {
+        clearPendingDraft();
+        const refreshed = await loadResellerData().catch(() => null);
+        if (refreshed) {
+          setCatalogData(refreshed.catalogJson);
+          setOrdersData(refreshed.ordersJson);
+        }
+        return;
+      }
+
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return;
+      }
+
+      if (json.order?.financialStatus === "paid") {
+        clearCart();
+        clearPendingDraft();
+        setCheckoutResult({ name: json.order.name, purchased: true });
+        const refreshed = await loadResellerData().catch(() => null);
+        if (refreshed) {
+          setCatalogData(refreshed.catalogJson);
+          setOrdersData(refreshed.ordersJson);
+        }
+      }
+    }
+
+    refreshPendingDraftStatus().catch(() => {});
+    const intervalId = window.setInterval(() => {
+      refreshPendingDraftStatus().catch(() => {});
+    }, 30000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [clearCart, clearPendingDraft, loadResellerData, pendingDraft?.draftId]);
+
+  async function handleCancelPendingCheckout() {
+    if (!pendingCheckout?.legacyId) return;
+
+    setCancelBusy(true);
+    setCheckoutError("");
+
+    const response = await fetch(`/api/reseller/orders/${pendingCheckout.legacyId}`, {
+      method: "DELETE",
+    });
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setCheckoutError(json.error || "Unable to cancel the pending checkout.");
+      setCancelBusy(false);
+      return;
+    }
+
+    clearPendingDraft();
+    const refreshed = await loadResellerData().catch(() => null);
+    if (refreshed) {
+      setCatalogData(refreshed.catalogJson);
+      setOrdersData(refreshed.ordersJson);
+    }
+    setCancelBusy(false);
+  }
 
   async function handleCheckout() {
-    if (cartDetails.length === 0 || !checkoutSupported) return;
+    if (cartDetails.length === 0 || !checkoutSupported || pendingCheckout) return;
 
     setCheckoutBusy(true);
     setCheckoutError("");
@@ -141,8 +246,15 @@ export default function ResellerCartClient({ initialReseller }) {
     }
 
     const createdOrder = json.order || null;
-    clearCart();
+    setPendingDraft({ draftId: createdOrder?.id, createdAt: createdOrder?.created_at });
     setCheckoutNote("");
+    setCheckoutBusy(false);
+
+    const refreshed = await loadResellerData().catch(() => null);
+    if (refreshed) {
+      setCatalogData(refreshed.catalogJson);
+      setOrdersData(refreshed.ordersJson);
+    }
 
     if (createdOrder?.invoice_url) {
       window.location.assign(createdOrder.invoice_url);
@@ -150,12 +262,6 @@ export default function ResellerCartClient({ initialReseller }) {
     }
 
     setCheckoutResult(createdOrder);
-    setCheckoutBusy(false);
-
-    try {
-      const refreshedOrders = await fetch("/api/reseller/orders").then((result) => result.json());
-      setOrdersData(refreshedOrders);
-    } catch {}
   }
 
   if (loading) {
@@ -229,14 +335,14 @@ export default function ResellerCartClient({ initialReseller }) {
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex items-center gap-2 rounded-full border border-gray-300 px-2 py-1">
-                        <button onClick={() => updateQuantity(item.productId, item.variantLegacyId, item.quantity - 1)} className="h-7 w-7 rounded-full text-gray-600 hover:bg-gray-100">-</button>
+                        <button disabled={Boolean(pendingCheckout)} onClick={() => updateQuantity(item.productId, item.variantLegacyId, item.quantity - 1)} className="h-7 w-7 rounded-full text-gray-600 hover:bg-gray-100 disabled:opacity-40">-</button>
                         <span className="w-6 text-center text-sm font-semibold text-nct-navy">{item.quantity}</span>
-                        <button onClick={() => updateQuantity(item.productId, item.variantLegacyId, item.quantity + 1)} className="h-7 w-7 rounded-full text-gray-600 hover:bg-gray-100">+</button>
+                        <button disabled={Boolean(pendingCheckout)} onClick={() => updateQuantity(item.productId, item.variantLegacyId, item.quantity + 1)} className="h-7 w-7 rounded-full text-gray-600 hover:bg-gray-100 disabled:opacity-40">+</button>
                       </div>
                       <p className="min-w-[96px] text-right text-sm font-semibold text-nct-gold">
                         {formatCurrency((item.variant.price || 0) * item.quantity, item.product.currencyCode)}
                       </p>
-                      <button onClick={() => removeItem(item.productId, item.variantLegacyId)} className="text-xs font-semibold text-red-600 underline hover:text-red-700">
+                      <button disabled={Boolean(pendingCheckout)} onClick={() => removeItem(item.productId, item.variantLegacyId)} className="text-xs font-semibold text-red-600 underline hover:text-red-700 disabled:opacity-40">
                         Remove
                       </button>
                     </div>
@@ -273,9 +379,9 @@ export default function ResellerCartClient({ initialReseller }) {
             {checkoutError && <p className="mt-4 text-sm text-red-500">{checkoutError}</p>}
             {checkoutResult && (
               <div className="mt-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-3 space-y-2">
-                <p className="font-semibold">{checkoutResult.name} created successfully.</p>
-                <p>Your order was created from the NCT portal. The only remaining step is secure payment.</p>
-                {checkoutResult.invoice_url && (
+                <p className="font-semibold">{checkoutResult.name} {checkoutResult.purchased ? "was paid successfully." : "created successfully."}</p>
+                <p>{checkoutResult.purchased ? "Your reseller cart has been cleared because Shopify confirmed payment for this checkout." : "Your order was created from the NCT portal. The only remaining step is secure payment."}</p>
+                {!checkoutResult.purchased && checkoutResult.invoice_url && (
                   <a href={checkoutResult.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex text-nct-navy underline font-semibold">
                     Continue to secure payment ↗
                   </a>
@@ -285,10 +391,10 @@ export default function ResellerCartClient({ initialReseller }) {
 
             <button
               onClick={handleCheckout}
-              disabled={checkoutBusy || cartDetails.length === 0 || !checkoutSupported}
+              disabled={checkoutBusy || cartDetails.length === 0 || !checkoutSupported || Boolean(pendingCheckout)}
               className="mt-4 w-full bg-nct-gold hover:bg-nct-gold-dark text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-40"
             >
-              {checkoutBusy ? "Creating your order…" : "Create Order In Portal"}
+              {checkoutBusy ? "Creating your order…" : pendingCheckout ? "Finish or Cancel Existing Checkout" : "Create Order In Portal"}
             </button>
           </div>
 
@@ -303,6 +409,10 @@ export default function ResellerCartClient({ initialReseller }) {
                   {pendingCheckout.financialStatus.replace(/_/g, " ")}
                 </span>
               </div>
+
+              <p className="mt-3 text-xs text-amber-800">
+                Inventory is reserved for this checkout for <strong>{formatTimeRemaining(pendingCheckoutRemainingMs)}</strong>. If payment is not completed in time, the order will be canceled automatically.
+              </p>
 
               {pendingCheckout.items?.length > 0 && (
                 <div className="mt-4 space-y-2">
@@ -324,14 +434,23 @@ export default function ResellerCartClient({ initialReseller }) {
                 <p className="text-sm text-gray-600">
                   Total <span className="font-semibold text-gray-900">{formatCurrency(pendingCheckout.totalPrice, pendingCheckout.currencyCode)}</span>
                 </p>
-                <a
-                  href={pendingCheckout.orderStatusUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-xl bg-nct-gold px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-nct-gold-dark"
-                >
-                  Continue Checkout
-                </a>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCancelPendingCheckout}
+                    disabled={cancelBusy}
+                    className="inline-flex items-center justify-center rounded-xl border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 disabled:opacity-40"
+                  >
+                    {cancelBusy ? "Canceling…" : "Cancel Order"}
+                  </button>
+                  <a
+                    href={pendingCheckout.orderStatusUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-xl bg-nct-gold px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-nct-gold-dark"
+                  >
+                    Continue Checkout
+                  </a>
+                </div>
               </div>
             </div>
           )}

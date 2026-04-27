@@ -1,5 +1,5 @@
 import { canAccessResellerStore, getCurrentResellerContext } from "@/lib/reseller-auth";
-import { createShopifyDraftOrder, fetchShopifyCatalog } from "@/lib/shopify";
+import { createShopifyDraftOrder, fetchActivePortalDraftOrders, fetchReservationAwareShopifyCatalog } from "@/lib/shopify";
 import { NextResponse } from "next/server";
 
 function buildVariantLookup(products) {
@@ -34,7 +34,16 @@ export async function POST(request) {
     return NextResponse.json({ error: "Add at least one item before checkout." }, { status: 400 });
   }
 
-  const catalog = await fetchShopifyCatalog({ limit: 120 });
+  const existingPendingDrafts = await fetchActivePortalDraftOrders({ email: reseller.email, limit: 25 });
+
+  if (existingPendingDrafts.length > 0) {
+    return NextResponse.json({
+      error: "You already have a pending checkout. Continue or cancel that order before creating a new one.",
+      order: existingPendingDrafts[0],
+    }, { status: 409 });
+  }
+
+  const catalog = await fetchReservationAwareShopifyCatalog({ limit: 120 });
   if (catalog.source !== "shopify" || !catalog.configured) {
     return NextResponse.json({ error: "Checkout is unavailable until Shopify sync is configured." }, { status: 503 });
   }
