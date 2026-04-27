@@ -308,9 +308,9 @@ export default function ResellerStoreClient({ initialReseller }) {
 
               return (
                 <div key={product.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col">
-                  <div className="h-48 bg-gray-100 overflow-hidden">
+                  <div className="h-48 bg-gray-100 overflow-hidden p-2">
                     {product.image?.url ? (
-                      <img src={product.image.url} alt={product.image.altText || product.title} className="w-full h-full object-cover" />
+                      <img src={product.image.url} alt={product.image.altText || product.title} className="w-full h-full object-contain" />
                     ) : buildPlaceholder(product.productType)}
                   </div>
                   <div className="p-5 flex-1 flex flex-col">
@@ -424,9 +424,9 @@ export default function ResellerStoreClient({ initialReseller }) {
             <div className="grid lg:grid-cols-[420px_minmax(0,1fr)]">
               <div className="bg-gray-100 min-h-[320px] p-4 lg:p-5">
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_92px] lg:grid-cols-[minmax(0,1fr)_96px] h-full">
-                  <div className="overflow-hidden rounded-2xl bg-gray-100 min-h-[320px]">
+                  <div className="overflow-hidden rounded-2xl bg-gray-100 min-h-[320px] flex items-center justify-center p-3">
                     {selectedModalImage?.url ? (
-                      <img src={selectedModalImage.url} alt={selectedModalImage.altText || selectedProduct.title} className="w-full h-full object-cover" />
+                      <img src={selectedModalImage.url} alt={selectedModalImage.altText || selectedProduct.title} className="max-w-full max-h-[70vh] w-auto h-auto object-contain" />
                     ) : buildPlaceholder(selectedProduct.productType)}
                   </div>
 
@@ -442,7 +442,7 @@ export default function ResellerStoreClient({ initialReseller }) {
                             onClick={() => setSelectedImageUrl(image.url)}
                             className={`overflow-hidden rounded-xl border transition-colors ${isActive ? "border-nct-navy ring-2 ring-nct-navy/15" : "border-gray-200 hover:border-gray-400"}`}
                           >
-                            <img src={image.url} alt={image.altText || selectedProduct.title} className="w-full h-full object-cover" />
+                            <img src={image.url} alt={image.altText || selectedProduct.title} className="w-full h-full object-contain bg-gray-100" />
                           </button>
                         );
                       })}
