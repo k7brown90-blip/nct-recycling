@@ -113,19 +113,6 @@ export default function ResellerCartClient({ initialReseller }) {
     }) || null;
   }, [ordersData]);
 
-  const recentOrders = useMemo(() => {
-    const orders = ordersData?.orders || [];
-
-    return orders
-      .filter((order) => {
-        if (!pendingCheckout) return true;
-        if (pendingCheckout.id && order.id === pendingCheckout.id) return false;
-        if (pendingCheckout.legacyId && order.legacyId === pendingCheckout.legacyId) return false;
-        return true;
-      })
-      .slice(0, 5);
-  }, [ordersData, pendingCheckout]);
-
   const cartSubtotal = cartDetails.reduce((sum, item) => sum + ((item.variant?.price || 0) * item.quantity), 0);
   const checkoutSupported = Boolean(catalogData?.checkout_supported);
   const pendingCheckoutRemainingMs = useMemo(() => {
@@ -355,7 +342,12 @@ export default function ResellerCartClient({ initialReseller }) {
 
         <div className="space-y-5 xl:sticky xl:top-6">
           <div className="bg-white border border-gray-200 rounded-2xl p-5">
-            <p className="text-sm font-semibold text-nct-navy mb-4">Checkout Review</p>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <p className="text-sm font-semibold text-nct-navy">Checkout Review</p>
+              <Link href="/reseller/store/orders" className="text-sm font-semibold text-nct-navy underline">
+                Order History
+              </Link>
+            </div>
 
             <div className="space-y-3 text-sm">
               <div className="flex items-center justify-between text-gray-600">
@@ -455,30 +447,6 @@ export default function ResellerCartClient({ initialReseller }) {
             </div>
           )}
 
-          <div className="bg-white border border-gray-200 rounded-2xl p-5">
-            <p className="text-sm font-semibold text-nct-navy mb-4">Recent Orders</p>
-            <div className="space-y-3">
-              {recentOrders.map((order) => (
-                <div key={order.id} className="border border-gray-200 rounded-xl p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{order.name}</p>
-                      <p className="text-xs text-gray-500">{formatDate(order.createdAt)}</p>
-                    </div>
-                    <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-600 capitalize">{order.financialStatus.replace(/_/g, " ")}</span>
-                  </div>
-                  {order.orderStatusUrl && (
-                    <a href={order.orderStatusUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-xs text-nct-navy underline mt-2">
-                      {order.invoiceUrl || order.financialStatus === "awaiting_payment" ? "Continue checkout ↗" : "View status ↗"}
-                    </a>
-                  )}
-                </div>
-              ))}
-              {recentOrders.length === 0 && (
-                <p className="text-sm text-gray-500">Orders will appear here once you create and complete portal orders.</p>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </div>

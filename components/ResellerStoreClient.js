@@ -36,6 +36,22 @@ function buildPlaceholder(productType) {
   );
 }
 
+function getProductImages(product) {
+  const imageCandidates = Array.isArray(product?.images) && product.images.length > 0
+    ? product.images
+    : product?.image
+      ? [product.image]
+      : [];
+
+  const seenUrls = new Set();
+
+  return imageCandidates.filter((image) => {
+    if (!image?.url || seenUrls.has(image.url)) return false;
+    seenUrls.add(image.url);
+    return true;
+  });
+}
+
 export default function ResellerStoreClient({ initialReseller }) {
   const [catalogData, setCatalogData] = useState(null);
   const [ordersData, setOrdersData] = useState(null);
@@ -45,6 +61,7 @@ export default function ResellerStoreClient({ initialReseller }) {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedVariantId, setSelectedVariantId] = useState("");
+  const [selectedImageUrl, setSelectedImageUrl] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const resellerId = initialReseller?.id || "guest";
   const { cart, itemCount, pendingDraft, addItem, clearCart, clearPendingDraft } = useResellerCart(resellerId);
@@ -201,6 +218,7 @@ export default function ResellerStoreClient({ initialReseller }) {
   function openProduct(product) {
     setSelectedProduct(product);
     setSelectedVariantId(String(product.variants?.[0]?.legacyId || ""));
+    setSelectedImageUrl(getProductImages(product)[0]?.url || "");
   }
 
   function addToCart(product, variant) {
@@ -209,6 +227,11 @@ export default function ResellerStoreClient({ initialReseller }) {
   }
 
   const selectedVariant = selectedProduct?.variants?.find((variant) => String(variant.legacyId || "") === String(selectedVariantId || "")) || selectedProduct?.variants?.[0] || null;
+  const selectedProductImages = useMemo(() => getProductImages(selectedProduct), [selectedProduct]);
+  const selectedModalImage = useMemo(() => {
+    if (!selectedProduct) return null;
+    return selectedProductImages.find((image) => image.url === selectedImageUrl) || selectedProductImages[0] || selectedProduct.image || null;
+  }, [selectedImageUrl, selectedProduct, selectedProductImages]);
 
   if (loading) {
     return <p className="text-sm text-gray-400 py-6">Loading reseller store…</p>;
@@ -381,29 +404,16 @@ export default function ResellerStoreClient({ initialReseller }) {
           </div>
 
           <div className="bg-white border border-gray-200 rounded-2xl p-5">
-            <p className="text-sm font-semibold text-nct-navy mb-4">Order history</p>
-            <div className="space-y-3">
-              {(ordersData?.orders || []).slice(0, 6).map((order) => (
-                <div key={order.id} className="border border-gray-200 rounded-xl p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{order.name}</p>
-                      <p className="text-xs text-gray-500">{formatDate(order.createdAt)}</p>
-                      <p className="text-xs text-gray-500 mt-1">{formatCurrency(order.totalPrice, order.currencyCode)}</p>
-                    </div>
-                    <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-600 capitalize">{order.financialStatus.replace(/_/g, " ")}</span>
-                  </div>
-                  {order.orderStatusUrl && (
-                    <a href={order.orderStatusUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-xs text-nct-navy underline mt-2">
-                      {order.invoiceUrl || order.financialStatus === "awaiting_payment" ? "Continue checkout ↗" : "View status ↗"}
-                    </a>
-                  )}
-                </div>
-              ))}
-              {(!ordersData?.orders || ordersData.orders.length === 0) && (
-                <p className="text-sm text-gray-500">Orders will appear here once you create and complete Shopify checkouts.</p>
-              )}
-            </div>
+            <p className="text-sm font-semibold text-nct-navy mb-2">Order History</p>
+            <p className="text-sm text-gray-500">
+              Pending and completed orders now live on a separate page so the store stays focused on shopping.
+            </p>
+            <Link
+              href="/reseller/store/orders"
+              className="mt-4 inline-flex w-full items-center justify-center rounded-xl border border-nct-navy px-5 py-3 text-sm font-semibold text-nct-navy transition-colors hover:bg-nct-navy hover:text-white"
+            >
+              Open Order History
+            </Link>
           </div>
         </div>
       </div>
@@ -412,16 +422,42 @@ export default function ResellerStoreClient({ initialReseller }) {
         <div className="fixed inset-0 z-50 bg-black/40 px-4 py-6 overflow-y-auto" onClick={() => setSelectedProduct(null)}>
           <div className="max-w-4xl mx-auto bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="grid lg:grid-cols-[420px_minmax(0,1fr)]">
-              <div className="bg-gray-100 min-h-[320px]">
-                {selectedProduct.image?.url ? (
-                  <img src={selectedProduct.image.url} alt={selectedProduct.image.altText || selectedProduct.title} className="w-full h-full object-cover" />
-                ) : buildPlaceholder(selectedProduct.productType)}
+              <div className="bg-gray-100 min-h-[320px] p-4 lg:p-5">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_92px] lg:grid-cols-[minmax(0,1fr)_96px] h-full">
+                  <div className="overflow-hidden rounded-2xl bg-gray-100 min-h-[320px]">
+                    {selectedModalImage?.url ? (
+                      <img src={selectedModalImage.url} alt={selectedModalImage.altText || selectedProduct.title} className="w-full h-full object-cover" />
+                    ) : buildPlaceholder(selectedProduct.productType)}
+                  </div>
+
+                  {selectedProductImages.length > 1 && (
+                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-1 sm:auto-rows-[68px] lg:auto-rows-[72px] content-start overflow-x-auto sm:overflow-y-auto pr-1">
+                      {selectedProductImages.map((image) => {
+                        const isActive = image.url === selectedModalImage?.url;
+
+                        return (
+                          <button
+                            key={image.id || image.url}
+                            type="button"
+                            onClick={() => setSelectedImageUrl(image.url)}
+                            className={`overflow-hidden rounded-xl border transition-colors ${isActive ? "border-nct-navy ring-2 ring-nct-navy/15" : "border-gray-200 hover:border-gray-400"}`}
+                          >
+                            <img src={image.url} alt={image.altText || selectedProduct.title} className="w-full h-full object-cover" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="p-6 lg:p-8 space-y-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-gray-400">{selectedProduct.productType} • {selectedProduct.vendor}</p>
                     <h3 className="text-2xl font-bold text-nct-navy mt-1">{selectedProduct.title}</h3>
+                    {selectedProductImages.length > 1 && (
+                      <p className="text-xs text-gray-500 mt-2">{selectedProductImages.length} Shopify photos synced to this item.</p>
+                    )}
                   </div>
                   <button onClick={() => setSelectedProduct(null)} className="text-gray-400 hover:text-gray-700 text-xl">×</button>
                 </div>

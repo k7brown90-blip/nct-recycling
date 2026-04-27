@@ -24,6 +24,9 @@ export default async function ResellerStorePage() {
           <p className="text-sm text-gray-500 mt-1">{user.email}</p>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/reseller/store/orders" className="inline-flex items-center justify-center rounded-xl border border-nct-navy px-4 py-2.5 text-sm font-semibold text-nct-navy transition-colors hover:bg-nct-navy hover:text-white">
+            Order History
+          </Link>
           <Link href="/reseller/store/cart" className="inline-flex items-center justify-center rounded-xl border border-nct-navy px-4 py-2.5 text-sm font-semibold text-nct-navy transition-colors hover:bg-nct-navy hover:text-white">
             View Cart
           </Link>
