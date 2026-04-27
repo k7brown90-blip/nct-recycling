@@ -36,10 +36,25 @@ export async function GET(request) {
   const applications = await Promise.all(
     (data || []).map(async (application) => {
       try {
-        const [canonicalProgram, canonicalAgreement] = await Promise.all([
+        const [initialCanonicalProgram, canonicalAgreement] = await Promise.all([
           getCanonicalProgramSnapshot(supabase, "nonprofit_applications", application.id),
           findSignedAgreementDocumentForLegacySource(supabase, "nonprofit_applications", application.id),
         ]);
+
+        const legacyLifecycle = mapLegacyCoOpStatusToLifecycle(application.status);
+        let canonicalProgram = initialCanonicalProgram;
+
+        // Older approvals can have stale canonical lifecycle state even though the
+        // legacy application row was already approved. Repair that drift inline so
+        // the admin status view reflects the effective co-op state.
+        if (
+          canonicalProgram?.lifecycleStatus &&
+          canonicalProgram.lifecycleStatus !== legacyLifecycle &&
+          ["approved", "denied"].includes(application.status)
+        ) {
+          await syncCanonicalCoOpAdminState(supabase, application);
+          canonicalProgram = await getCanonicalProgramSnapshot(supabase, "nonprofit_applications", application.id);
+        }
 
         return {
           ...application,
