@@ -1,8 +1,8 @@
 import { createServiceClient } from "@/lib/supabase";
-import { Resend } from "resend";
+import { getDefaultEmailSender, sendBulkEmails } from "@/lib/resend-mail";
 import { NextResponse } from "next/server";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const defaultSender = getDefaultEmailSender();
 
 function checkAdminAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.ADMIN_SECRET}`;
@@ -82,6 +82,20 @@ function buildEmailHtml(name, subject, body) {
   `;
 }
 
+function dedupeRecipientsByEmail(recipients) {
+  const seen = new Set();
+
+  return recipients.filter((recipient) => {
+    const email = String(recipient?.email || "").trim().toLowerCase();
+    if (!email || seen.has(email)) {
+      return false;
+    }
+
+    seen.add(email);
+    return true;
+  });
+}
+
 // GET — return list of all approved portal users
 export async function GET(request) {
   if (!checkAdminAuth(request)) {
@@ -121,26 +135,28 @@ export async function POST(request) {
     return NextResponse.json({ error: "No recipients found." }, { status: 400 });
   }
 
-  let sent = 0;
-  const errors = [];
+  const dedupedRecipients = dedupeRecipientsByEmail(recipients);
 
-  for (const recipient of recipients) {
-    const { error } = await resend.emails.send({
-      from: "NCT Recycling <noreply@nctrecycling.com>",
-      to: recipient.email,
+  const { sent, failed, errors } = await sendBulkEmails(
+    dedupedRecipients.map((recipient) => ({
+      from: defaultSender.from,
+      replyTo: defaultSender.replyTo,
+      to: [recipient.email],
       subject,
       html: buildEmailHtml(recipient.name, subject, body),
-    });
-    if (error) {
-      errors.push({ email: recipient.email, error: error.message });
-    } else {
-      sent++;
-    }
-  }
+    }))
+  );
 
   if (errors.length > 0) {
     console.error("Email send errors:", errors);
   }
 
-  return NextResponse.json({ success: true, sent, failed: errors.length });
+  return NextResponse.json({
+    success: failed === 0,
+    sent,
+    failed,
+    requested: recipients.length,
+    unique_recipients: dedupedRecipients.length,
+    duplicate_recipients_removed: recipients.length - dedupedRecipients.length,
+  });
 }
