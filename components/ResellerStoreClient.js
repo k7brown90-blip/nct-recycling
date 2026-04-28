@@ -52,6 +52,26 @@ function getProductImages(product) {
   });
 }
 
+function normalizeImageIndex(index, imageCount) {
+  if (imageCount <= 0) return 0;
+  return (index + imageCount) % imageCount;
+}
+
+function GalleryArrowButton({ direction, onClick, className = "" }) {
+  const isPrevious = direction === "previous";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={isPrevious ? "Previous photo" : "Next photo"}
+      className={`inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/90 text-2xl font-light text-nct-navy shadow-sm transition-colors hover:bg-white ${className}`}
+    >
+      {isPrevious ? "‹" : "›"}
+    </button>
+  );
+}
+
 export default function ResellerStoreClient({ initialReseller }) {
   const [catalogData, setCatalogData] = useState(null);
   const [ordersData, setOrdersData] = useState(null);
@@ -59,6 +79,7 @@ export default function ResellerStoreClient({ initialReseller }) {
   const [catalogError, setCatalogError] = useState("");
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [cardImageIndexes, setCardImageIndexes] = useState({});
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedVariantId, setSelectedVariantId] = useState("");
   const [selectedImageUrl, setSelectedImageUrl] = useState("");
@@ -221,17 +242,38 @@ export default function ResellerStoreClient({ initialReseller }) {
     setSelectedImageUrl(getProductImages(product)[0]?.url || "");
   }
 
+  function shiftCardImage(productId, imageCount, direction) {
+    if (imageCount <= 1) return;
+
+    setCardImageIndexes((current) => ({
+      ...current,
+      [productId]: normalizeImageIndex((current[productId] ?? 0) + direction, imageCount),
+    }));
+  }
+
+  function shiftSelectedModalImage(direction) {
+    if (selectedProductImages.length <= 1) return;
+
+    const currentIndex = selectedProductImages.findIndex((image) => image.url === selectedImageUrl);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = normalizeImageIndex(safeIndex + direction, selectedProductImages.length);
+    setSelectedImageUrl(selectedProductImages[nextIndex]?.url || "");
+  }
+
   function addToCart(product, variant) {
     if (!variant?.legacyId || !checkoutSupported || pendingCheckout) return;
     addItem(product.id, variant.legacyId);
   }
 
   const selectedVariant = selectedProduct?.variants?.find((variant) => String(variant.legacyId || "") === String(selectedVariantId || "")) || selectedProduct?.variants?.[0] || null;
-  const selectedProductImages = useMemo(() => getProductImages(selectedProduct), [selectedProduct]);
-  const selectedModalImage = useMemo(() => {
-    if (!selectedProduct) return null;
-    return selectedProductImages.find((image) => image.url === selectedImageUrl) || selectedProductImages[0] || selectedProduct.image || null;
-  }, [selectedImageUrl, selectedProduct, selectedProductImages]);
+  const selectedProductImages = getProductImages(selectedProduct);
+  const selectedModalImageIndex = (() => {
+    const currentIndex = selectedProductImages.findIndex((image) => image.url === selectedImageUrl);
+    return currentIndex >= 0 ? currentIndex : 0;
+  })();
+  const selectedModalImage = !selectedProduct
+    ? null
+    : selectedProductImages.find((image) => image.url === selectedImageUrl) || selectedProductImages[0] || selectedProduct.image || null;
 
   if (loading) {
     return <p className="text-sm text-gray-400 py-6">Loading reseller store…</p>;
@@ -305,36 +347,74 @@ export default function ResellerStoreClient({ initialReseller }) {
             {filteredProducts.map((product) => {
               const defaultVariant = product.variants?.[0] || null;
               const inventoryLabel = product.inventory > 0 ? `${product.inventory} in stock` : "Reserved / out of stock";
+              const productImages = getProductImages(product);
+              const activeImageIndex = normalizeImageIndex(cardImageIndexes[product.id] ?? 0, productImages.length || 1);
+              const activeImage = productImages[activeImageIndex] || product.image || null;
+              const hasMultipleImages = productImages.length > 1;
 
               return (
-                <div key={product.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col">
-                  <div className="h-48 bg-gray-100 overflow-hidden p-2">
-                    {product.image?.url ? (
-                      <img src={product.image.url} alt={product.image.altText || product.title} className="w-full h-full object-contain" />
-                    ) : buildPlaceholder(product.productType)}
-                  </div>
-                  <div className="p-5 flex-1 flex flex-col">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-400">{product.productType}</p>
-                        <h3 className="font-semibold text-gray-900 leading-snug">{product.title}</h3>
-                      </div>
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{product.vendor}</span>
+                <div key={product.id} className="grid h-[520px] grid-rows-[7fr_3fr] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                  <div className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-gray-100 to-white p-4">
+                    <div className="flex h-full items-center justify-center overflow-hidden rounded-2xl bg-gray-100 px-4 py-3">
+                      {activeImage?.url ? (
+                        <img src={activeImage.url} alt={activeImage.altText || product.title} className="max-h-full max-w-full object-contain" />
+                      ) : buildPlaceholder(product.productType)}
                     </div>
-                    <p className="text-sm text-gray-500 mb-4">{product.description || product.category}</p>
-                    <div className="mt-auto space-y-3">
-                      <div className="flex items-center justify-between">
+
+                    {hasMultipleImages && (
+                      <>
+                        <GalleryArrowButton
+                          direction="previous"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            shiftCardImage(product.id, productImages.length, -1);
+                          }}
+                          className="absolute left-4 top-1/2 -translate-y-1/2"
+                        />
+                        <GalleryArrowButton
+                          direction="next"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            shiftCardImage(product.id, productImages.length, 1);
+                          }}
+                          className="absolute right-4 top-1/2 -translate-y-1/2"
+                        />
+                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-nct-navy shadow-sm">
+                          {activeImageIndex + 1} / {productImages.length}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="grid h-full grid-rows-[auto_1fr_auto] gap-3 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs uppercase tracking-[0.18em] text-gray-400">{product.productType}</p>
+                        <h3 className="mt-1 text-xl font-bold leading-tight text-nct-navy">{product.title}</h3>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">{product.vendor}</span>
+                    </div>
+
+                    <div className="min-h-0 space-y-3 overflow-hidden">
+                      <p className="max-h-[4.75rem] overflow-hidden text-sm leading-6 text-gray-500">{product.description || product.category}</p>
+                      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        <span>{hasMultipleImages ? `${productImages.length} photos` : "Single photo"}</span>
+                        <span>{product.category}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-end justify-between gap-3">
                         <p className="text-lg font-bold text-nct-gold">{formatCurrency(product.price, product.currencyCode)}</p>
-                        <p className="text-xs font-medium text-gray-500">{inventoryLabel}</p>
+                        <p className="text-right text-xs font-medium text-gray-500">{inventoryLabel}</p>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => openProduct(product)} className="flex-1 border border-nct-navy text-nct-navy hover:bg-nct-navy hover:text-white font-medium px-4 py-2.5 rounded-xl transition-colors text-sm">
+                        <button onClick={() => openProduct(product)} className="flex-1 rounded-xl border border-nct-navy px-4 py-2.5 text-sm font-medium text-nct-navy transition-colors hover:bg-nct-navy hover:text-white">
                           View details
                         </button>
                         <button
                           onClick={() => addToCart(product, defaultVariant)}
                           disabled={!checkoutSupported || !defaultVariant?.legacyId || Number(product.inventory || 0) <= 0 || Boolean(pendingCheckout)}
-                          className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white font-medium px-4 py-2.5 rounded-xl transition-colors text-sm disabled:opacity-40"
+                          className="flex-1 rounded-xl bg-nct-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-nct-navy-dark disabled:opacity-40"
                         >
                           {pendingCheckout ? "Pending Checkout Active" : "Add to cart"}
                         </button>
@@ -420,87 +500,104 @@ export default function ResellerStoreClient({ initialReseller }) {
 
       {selectedProduct && (
         <div className="fixed inset-0 z-50 bg-black/40 px-4 py-6 overflow-y-auto" onClick={() => setSelectedProduct(null)}>
-          <div className="max-w-4xl mx-auto bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="grid lg:grid-cols-[420px_minmax(0,1fr)]">
-              <div className="bg-gray-100 min-h-[320px] p-4 lg:p-5">
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_92px] lg:grid-cols-[minmax(0,1fr)_96px] h-full">
-                  <div className="overflow-hidden rounded-2xl bg-gray-100 min-h-[320px] flex items-center justify-center p-3">
+          <div className="mx-auto max-w-5xl overflow-hidden rounded-[2rem] bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex flex-col lg:h-[88vh] lg:max-h-[920px]">
+              <div className="relative flex min-h-[420px] flex-[7] items-center justify-center overflow-hidden bg-gradient-to-b from-slate-50 via-gray-100 to-white p-5 lg:p-8">
+                <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[1.75rem] bg-gray-100 px-4 py-4 lg:px-8">
                     {selectedModalImage?.url ? (
                       <img src={selectedModalImage.url} alt={selectedModalImage.altText || selectedProduct.title} className="max-w-full max-h-[70vh] w-auto h-auto object-contain" />
                     ) : buildPlaceholder(selectedProduct.productType)}
-                  </div>
+                </div>
 
-                  {selectedProductImages.length > 1 && (
-                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-1 sm:auto-rows-[68px] lg:auto-rows-[72px] content-start overflow-x-auto sm:overflow-y-auto pr-1">
-                      {selectedProductImages.map((image) => {
-                        const isActive = image.url === selectedModalImage?.url;
-
-                        return (
-                          <button
-                            key={image.id || image.url}
-                            type="button"
-                            onClick={() => setSelectedImageUrl(image.url)}
-                            className={`overflow-hidden rounded-xl border transition-colors ${isActive ? "border-nct-navy ring-2 ring-nct-navy/15" : "border-gray-200 hover:border-gray-400"}`}
-                          >
-                            <img src={image.url} alt={image.altText || selectedProduct.title} className="w-full h-full object-contain bg-gray-100" />
-                          </button>
-                        );
-                      })}
+                {selectedProductImages.length > 1 && (
+                  <>
+                    <GalleryArrowButton
+                      direction="previous"
+                      onClick={() => shiftSelectedModalImage(-1)}
+                      className="absolute left-5 top-1/2 -translate-y-1/2 lg:left-8"
+                    />
+                    <GalleryArrowButton
+                      direction="next"
+                      onClick={() => shiftSelectedModalImage(1)}
+                      className="absolute right-5 top-1/2 -translate-y-1/2 lg:right-8"
+                    />
+                    <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-white/92 px-4 py-1.5 text-sm font-semibold text-nct-navy shadow-sm">
+                      {selectedModalImageIndex + 1} / {selectedProductImages.length}
                     </div>
-                  )}
-                </div>
-              </div>
-              <div className="p-6 lg:p-8 space-y-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-400">{selectedProduct.productType} • {selectedProduct.vendor}</p>
-                    <h3 className="text-2xl font-bold text-nct-navy mt-1">{selectedProduct.title}</h3>
-                    {selectedProductImages.length > 1 && (
-                      <p className="text-xs text-gray-500 mt-2">{selectedProductImages.length} Shopify photos synced to this item.</p>
-                    )}
-                  </div>
-                  <button onClick={() => setSelectedProduct(null)} className="text-gray-400 hover:text-gray-700 text-xl">×</button>
-                </div>
-
-                <p className="text-sm text-gray-600 leading-relaxed">{selectedProduct.description || "Product details will sync in from Shopify as descriptions are added."}</p>
-
-                {selectedProduct.variants?.length > 1 && (
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Variant</label>
-                    <select value={selectedVariantId} onChange={(event) => setSelectedVariantId(event.target.value)} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm bg-white">
-                      {selectedProduct.variants.map((variant) => (
-                        <option key={variant.id} value={variant.legacyId || ""}>{variant.title}</option>
-                      ))}
-                    </select>
-                  </div>
+                  </>
                 )}
 
-                <div className="grid md:grid-cols-3 gap-3">
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-200">
-                    <p className="text-xs uppercase tracking-wide text-gray-400">Price</p>
-                    <p className="text-lg font-bold text-nct-gold">{formatCurrency(selectedVariant?.price ?? selectedProduct.price, selectedProduct.currencyCode)}</p>
+                <button onClick={() => setSelectedProduct(null)} className="absolute right-5 top-5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-xl text-gray-500 shadow-sm transition-colors hover:bg-white hover:text-gray-700 lg:right-8 lg:top-8">×</button>
+              </div>
+              <div className="flex flex-[3] flex-col gap-5 border-t border-gray-200 p-6 lg:overflow-y-auto lg:px-8 lg:py-7">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-[0.18em] text-gray-400">{selectedProduct.productType} • {selectedProduct.vendor}</p>
+                    <h3 className="mt-2 text-3xl font-bold leading-tight text-nct-navy">{selectedProduct.title}</h3>
+                    {selectedProductImages.length > 1 && (
+                      <p className="mt-2 text-sm text-gray-500">{selectedProductImages.length} Shopify photos synced to this item.</p>
+                    )}
                   </div>
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-200">
-                    <p className="text-xs uppercase tracking-wide text-gray-400">Inventory</p>
-                    <p className="text-lg font-bold text-nct-navy">{selectedVariant?.inventory ?? selectedProduct.inventory}</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-200">
-                    <p className="text-xs uppercase tracking-wide text-gray-400">Category</p>
-                    <p className="text-sm font-bold text-nct-navy">{selectedProduct.category}</p>
+
+                  <div className="grid grid-cols-3 gap-3 lg:min-w-[360px]">
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-gray-400">Price</p>
+                      <p className="mt-1 text-xl font-bold text-nct-gold">{formatCurrency(selectedVariant?.price ?? selectedProduct.price, selectedProduct.currencyCode)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-gray-400">Inventory</p>
+                      <p className="mt-1 text-xl font-bold text-nct-navy">{selectedVariant?.inventory ?? selectedProduct.inventory}</p>
+                    </div>
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-gray-400">Category</p>
+                      <p className="mt-1 text-sm font-bold text-nct-navy">{selectedProduct.category}</p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => addToCart(selectedProduct, selectedVariant)}
-                    disabled={!checkoutSupported || !selectedVariant?.legacyId || Number(selectedVariant?.inventory ?? selectedProduct.inventory ?? 0) <= 0 || Boolean(pendingCheckout)}
-                    className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-40"
-                  >
-                    {pendingCheckout ? "Pending Checkout Active" : "Add to cart"}
-                  </button>
-                  <button onClick={() => setSelectedProduct(null)} className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 font-bold py-3 rounded-xl transition-colors">
-                    Continue browsing
-                  </button>
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+                  <div className="space-y-5">
+                    <p className="text-sm leading-7 text-gray-600">{selectedProduct.description || "Product details will sync in from Shopify as descriptions are added."}</p>
+
+                    {selectedProduct.variants?.length > 1 && (
+                      <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-400">Variant</label>
+                        <select value={selectedVariantId} onChange={(event) => setSelectedVariantId(event.target.value)} className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm">
+                          {selectedProduct.variants.map((variant) => (
+                            <option key={variant.id} value={variant.legacyId || ""}>{variant.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between text-gray-600">
+                        <span>Current image</span>
+                        <span className="font-semibold text-nct-navy">
+                          {selectedProductImages.length > 0 ? `${selectedModalImageIndex + 1} of ${selectedProductImages.length}` : "No photos"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-gray-600">
+                        <span>Availability</span>
+                        <span className="font-semibold text-nct-navy">{Number(selectedVariant?.inventory ?? selectedProduct.inventory ?? 0) > 0 ? "Ready to add" : "Unavailable"}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                      <button
+                        onClick={() => addToCart(selectedProduct, selectedVariant)}
+                        disabled={!checkoutSupported || !selectedVariant?.legacyId || Number(selectedVariant?.inventory ?? selectedProduct.inventory ?? 0) <= 0 || Boolean(pendingCheckout)}
+                        className="w-full rounded-xl bg-nct-navy py-3 text-base font-bold text-white transition-colors hover:bg-nct-navy-dark disabled:opacity-40"
+                      >
+                        {pendingCheckout ? "Pending Checkout Active" : "Add to cart"}
+                      </button>
+                      <button onClick={() => setSelectedProduct(null)} className="w-full rounded-xl border border-gray-300 py-3 text-base font-bold text-gray-700 transition-colors hover:bg-gray-50">
+                        Continue browsing
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
