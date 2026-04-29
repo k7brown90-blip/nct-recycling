@@ -1,6 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
 import {
-  getCanonicalDiscardRequests,
   markCanonicalDiscardPickupCollected,
   updateCanonicalDiscardPickupRequest,
 } from "@/lib/discard-canonical";
@@ -19,15 +18,6 @@ export async function GET(request) {
   if (!account_id) return NextResponse.json({ error: "Missing account_id." }, { status: 400 });
 
   const db = createServiceClient();
-  try {
-    const canonical = await getCanonicalDiscardRequests(db, account_id);
-    if (canonical !== null) {
-      return NextResponse.json({ requests: canonical || [] });
-    }
-  } catch (canonicalError) {
-    console.error("Canonical admin discard requests load error:", canonicalError);
-  }
-
   const { data, error } = await db
     .from("discard_pickup_requests")
     .select("*")

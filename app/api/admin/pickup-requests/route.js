@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase";
-import { getCanonicalCoOpRequests, updateCanonicalCoOpRequestStatus } from "@/lib/co-op-canonical";
+import { updateCanonicalCoOpRequestStatus } from "@/lib/co-op-canonical";
 import { NextResponse } from "next/server";
 
 function checkAdminAuth(request) {
@@ -14,44 +14,6 @@ export async function GET(request) {
   const status = searchParams.get("status");
 
   const db = createServiceClient();
-  try {
-    const { data: nonprofits } = await db
-      .from("nonprofit_applications")
-      .select("id")
-      .eq("status", "approved");
-
-    const requestLists = await Promise.all(
-      (nonprofits || []).map((nonprofit) => getCanonicalCoOpRequests(db, nonprofit.id))
-    );
-
-    const canonicalAvailable = requestLists.some((requests) => requests !== null);
-    if (canonicalAvailable) {
-      const canonicalRequests = requestLists
-        .flat()
-        .filter(Boolean)
-        .filter((request) => !status || request.status === status)
-        .sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
-
-      const nonprofitIds = [...new Set(canonicalRequests.map((request) => request.nonprofit_id).filter(Boolean))];
-      const { data: nonprofitRows } = nonprofitIds.length
-        ? await db
-            .from("nonprofit_applications")
-            .select("id, org_name, contact_name, email, address_street, address_city, address_state")
-            .in("id", nonprofitIds)
-        : { data: [] };
-
-      const nonprofitById = new Map((nonprofitRows || []).map((row) => [row.id, row]));
-      return NextResponse.json({
-        requests: canonicalRequests.map((request) => ({
-          ...request,
-          nonprofit_applications: nonprofitById.get(request.nonprofit_id) || null,
-        })),
-      });
-    }
-  } catch (canonicalError) {
-    console.error("Canonical co-op pickup request admin load error:", canonicalError);
-  }
-
   let query = db
     .from("nonprofit_pickup_requests")
     .select(`
