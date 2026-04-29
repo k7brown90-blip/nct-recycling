@@ -16,6 +16,26 @@ function normalizeStatuses(statuses) {
   return normalized.length ? normalized : ["pending", "scheduled"];
 }
 
+function isMissingColumnError(error, columnName) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("could not find") && message.includes(`'${columnName.toLowerCase()}'`) && message.includes("column");
+}
+
+async function updateWithScheduledDateFallback(db, tableName, ids, payload) {
+  const { error } = await db
+    .from(tableName)
+    .update(payload)
+    .in("id", ids);
+  if (error && isMissingColumnError(error, "scheduled_date")) {
+    const { scheduled_date: _ignored, ...withoutScheduledDate } = payload;
+    return db
+      .from(tableName)
+      .update(withoutScheduledDate)
+      .in("id", ids);
+  }
+  return { error };
+}
+
 export async function POST(request) {
   if (!checkAuth(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -83,20 +103,24 @@ export async function POST(request) {
   }
 
   if (coOpRequests.length > 0) {
-    const { error } = await db
-      .from("nonprofit_pickup_requests")
-      .update({ status: targetStatus, scheduled_date: null })
-      .in("id", coOpRequests.map((row) => row.id));
+    const { error } = await updateWithScheduledDateFallback(
+      db,
+      "nonprofit_pickup_requests",
+      coOpRequests.map((row) => row.id),
+      { status: targetStatus, scheduled_date: null }
+    );
     if (error) {
       return NextResponse.json({ error: "Failed to reset co-op requests.", detail: error.message }, { status: 500 });
     }
   }
 
   if (discardRequests.length > 0) {
-    const { error } = await db
-      .from("discard_pickup_requests")
-      .update({ status: targetStatus, scheduled_date: null, admin_notes: note })
-      .in("id", discardRequests.map((row) => row.id));
+    const { error } = await updateWithScheduledDateFallback(
+      db,
+      "discard_pickup_requests",
+      discardRequests.map((row) => row.id),
+      { status: targetStatus, scheduled_date: null, admin_notes: note }
+    );
     if (error) {
       return NextResponse.json({ error: "Failed to reset discard requests.", detail: error.message }, { status: 500 });
     }
