@@ -23,6 +23,30 @@ function checkAdminAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.ADMIN_SECRET}`;
 }
 
+// Resets bag counters for all stops on a route that weren't individually completed
+async function resetPendingBagCounts(db, routeId) {
+  const noteText = `Route completed by NCT — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const { data: stops } = await db
+    .from("pickup_route_stops")
+    .select("nonprofit_id, discard_account_id, stop_status")
+    .eq("route_id", routeId);
+
+  const pending = (stops || []).filter((s) => s.stop_status !== "completed");
+  const npIds = [...new Set(pending.filter((s) => s.nonprofit_id).map((s) => s.nonprofit_id))];
+  const discardIds = [...new Set(pending.filter((s) => s.discard_account_id).map((s) => s.discard_account_id))];
+
+  if (npIds.length) {
+    await db.from("bag_counts").insert(
+      npIds.map((id) => ({ nonprofit_id: id, bag_count: 0, entry_type: "pickup", notes: noteText }))
+    );
+  }
+  if (discardIds.length) {
+    await db.from("discard_bag_counts").insert(
+      discardIds.map((id) => ({ discard_account_id: id, bag_count: 0, entry_type: "pickup", notes: noteText }))
+    );
+  }
+}
+
 async function syncLegacyRouteAggregate(db, routeId) {
   const { data: stops, error: stopsError } = await db
     .from("pickup_route_stops")
@@ -479,7 +503,10 @@ export async function PATCH(request) {
     try {
       const canonicalUpdates = await updateOperationalRouteStatus(db, route_id, status);
       if (canonicalUpdates) {
-        return NextResponse.json({ success: true });
+          if (status === "completed") {
+            await resetPendingBagCounts(db, route_id).catch((err) => console.error("Bag reset on route completion error:", err));
+          }
+          return NextResponse.json({ success: true });
       }
     } catch (canonicalError) {
       console.error("Unified operations route status update error:", canonicalError);
@@ -505,6 +532,10 @@ export async function PATCH(request) {
     } catch (canonicalError) {
       console.error("Canonical co-op route status sync error:", canonicalError);
     }
+
+      if (status === "completed") {
+        await resetPendingBagCounts(db, route_id).catch((err) => console.error("Bag reset on route completion error:", err));
+      }
 
     return NextResponse.json({ success: true });
   }

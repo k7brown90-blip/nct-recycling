@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import AdminOnlineStorePanel from "@/components/AdminOnlineStorePanel";
 import { WORK_CALENDAR_DAYS, WORK_CALENDAR_MONTHS, buildWorkCalendarGrid, getWorkCalendarDateString } from "@/lib/work-calendar";
 
@@ -253,8 +253,9 @@ export default function AdminPage() {
   const [routeNotes, setRouteNotes] = useState("");
   const [routeStops, setRouteStops] = useState([]);
   const [routeLoading, setRouteLoading] = useState(false);
-  const [completingStop, setCompletingStop] = useState(null); // { stop_id, nonprofit_id, route_id, org_name }
+  const [completingStop, setCompletingStop] = useState(null); // { stop_id, nonprofit_id, route_id, org_name, nonprofit_id }
   const [actualBagsInput, setActualBagsInput] = useState("");
+  const routeBuilderRef = useRef(null);
 
   // Exchange appointments state
   const [appointments, setAppointments] = useState([]);
@@ -626,6 +627,13 @@ export default function AdminPage() {
     if (section === "Donation Lots") fetchLots();
     if (section === "Emails") fetchEmailUsers();
   }, [authed, section, fetchDashboard, fetchEmployees, fetchWorkCalendar, fetchTimeReviewEntries, fetchPayrollExports, fetchApplications, fetchBagLevels, fetchRoutes, fetchAppointments, fetchShoppingDays, fetchLots, fetchContainerRequests, fetchDiscardAccounts, fetchEmailUsers]);
+
+    // Auto-scroll to route builder when it opens
+    useEffect(() => {
+      if (buildingRoute && routeBuilderRef.current) {
+        setTimeout(() => routeBuilderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+      }
+    }, [buildingRoute]);
 
   useEffect(() => {
     setSelectedWorkDate(getWorkCalendarDateString(workCalendarYear, workCalendarMonth, 1));
@@ -1422,7 +1430,7 @@ export default function AdminPage() {
     const res = await fetch("/api/admin/routes", {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({ action: "complete_stop", stop_id, route_id, actual_bags: actual }),
+      body: JSON.stringify({ action: "complete_stop", stop_id, route_id, nonprofit_id: completingStop.nonprofit_id, actual_bags: actual }),
     });
     if (res.ok) {
       setMessage(`✅ Stop completed — bag counter reset for ${completingStop.org_name}.`);
@@ -2915,8 +2923,8 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (!routeDate) setRouteDate(new Date().toISOString().slice(0, 10));
-                      setBuildingRoute(true);
+                        if (!routeDate) setRouteDate(new Date().toISOString().slice(0, 10));
+                        setBuildingRoute(true);
                     }}
                     className="rounded-full bg-nct-navy px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-nct-navy-dark"
                   >
@@ -2952,8 +2960,160 @@ export default function AdminPage() {
             </div>
           </div>
 
+          <section className="mb-6 rounded-2xl border-2 border-nct-gold bg-yellow-50 p-5" ref={routeBuilderRef}>
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-nct-navy">Route Builder Workspace</h3>
+                <p className="text-xs text-gray-500">Pickup requests are surfaced here first so dispatch can build routes without hunting through the page.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!routeDate) setRouteDate(new Date().toISOString().slice(0, 10));
+                  setBuildingRoute((current) => !current);
+                }}
+                className="rounded-full bg-nct-navy px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-nct-navy-dark"
+              >
+                {buildingRoute ? "Hide Builder" : "Open Builder"}
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-amber-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Pending Co-op Pickup Requests</p>
+              {(bagLevels.filter((account) => account.pending_request).length === 0) ? (
+                <p className="mt-2 text-sm text-gray-500">No pending co-op pickup requests.</p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {bagLevels
+                    .filter((account) => account.pending_request)
+                    .sort((a, b) => (b.bag_count ?? 0) - (a.bag_count ?? 0))
+                    .map((account) => (
+                      <div key={`pending-${account.id}`} className="flex items-center justify-between rounded-lg border border-amber-100 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-nct-navy">{account.org_name}</p>
+                          <p className="text-xs text-gray-500">
+                            Requested {account.pending_request.estimated_bags ? `${account.pending_request.estimated_bags} bags` : account.pending_request.estimated_weight_lbs ? `${account.pending_request.estimated_weight_lbs} lbs` : "pickup"}
+                            {account.pending_request.preferred_date ? ` • Pref: ${new Date(account.pending_request.preferred_date + "T12:00:00").toLocaleDateString()}` : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleScheduleCoOpRequest(account)}
+                          className="rounded-full bg-nct-gold px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-nct-gold-dark"
+                        >
+                          Add to Route
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {buildingRoute && (
+              <>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Pickup Date *</label>
+                    <input type="date" value={routeDate} onChange={(e) => setRouteDate(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Time (optional)</label>
+                    <input type="time" value={routeTime} onChange={(e) => setRouteTime(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Route Notes</label>
+                    <input type="text" value={routeNotes} onChange={(e) => setRouteNotes(e.target.value)}
+                      placeholder="e.g. Driver: Kyle, Truck #2"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  </div>
+                </div>
+
+                <h4 className="font-semibold text-nct-navy text-sm mb-2">Add Stops</h4>
+                <p className="text-xs text-gray-500 mb-3">Click a service account below to add it to this route. Co-op and discard stops share the same logistics flow here.</p>
+                <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                  {serviceAccounts
+                    .sort((a, b) => (b.bag_count ?? -1) - (a.bag_count ?? -1))
+                    .map((account) => {
+                      const added = routeStops.find((stop) => stop.enrollment_id === account.enrollment_id);
+                      return (
+                        <div key={account.enrollment_id} className={`flex items-center justify-between border rounded-lg px-3 py-2 text-sm ${added ? "bg-green-50 border-green-300" : "bg-white border-gray-200"}`}>
+                          <div className="flex-1 min-w-0 mr-3">
+                            <span className="font-medium">{account.org_name}</span>
+                            <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${account.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                              {account.program_type === "discard" ? "Discard" : "Co-op"}
+                            </span>
+                            <span className="text-gray-400 ml-2 text-xs">{[account.address_city, account.address_state].filter(Boolean).join(", ")}</span>
+                            {account.pending_request && (
+                              <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">
+                                Requested {account.pending_request.estimated_bags ? `${account.pending_request.estimated_bags} bags` : account.pending_request.estimated_weight_lbs ? `${account.pending_request.estimated_weight_lbs} lbs` : "pickup"}
+                              </span>
+                            )}
+                            {account.bag_count != null && (
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <div className="w-28 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                  <div className={`h-1.5 rounded-full transition-all ${bagBarColor(account.bag_count)}`} style={{ width: `${Math.min(100, (account.bag_count / TARGET_BAGS) * 100)}%` }} />
+                                </div>
+                                <span className={`text-[11px] font-semibold ${bagColor(account.bag_count)}`}>{account.bag_count} / {TARGET_BAGS} bags</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {added ? (
+                              <button onClick={() => setRouteStops((prev) => prev.filter((stop) => stop.enrollment_id !== account.enrollment_id))}
+                                className="text-xs text-red-600 underline">Remove</button>
+                            ) : (
+                              <button onClick={() => addStop(account)}
+                                className="text-xs bg-nct-navy text-white px-3 py-1 rounded-full">Add</button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {routeStops.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-semibold text-nct-navy text-sm mb-2">Stops on This Route ({routeStops.length})</h4>
+                    {routeStops.map((s, i) => (
+                      <div key={s.enrollment_id} className="flex items-center gap-2 text-sm mb-1">
+                        <span className="w-5 h-5 rounded-full bg-nct-navy text-white flex items-center justify-center text-xs">{i + 1}</span>
+                        <span className="flex-1 font-medium">{s.org_name}</span>
+                        <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${s.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                          {s.program_type === "discard" ? "Discard" : "Co-op"}
+                        </span>
+                        <input type="number" min="0" value={s.estimated_bags}
+                          onChange={(e) => setRouteStops((prev) => prev.map((stop) => stop.enrollment_id === s.enrollment_id ? { ...stop, estimated_bags: parseInt(e.target.value) || 0 } : stop))}
+                          className="w-16 border border-gray-300 rounded px-2 py-1 text-sm" placeholder="bags" />
+                        <span className="text-xs text-gray-400">bags</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {routeStops.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => openInMaps(routeStops)}
+                    className="w-full mb-3 border-2 border-nct-navy text-nct-navy font-bold py-2.5 rounded-lg hover:bg-nct-navy hover:text-white transition-colors flex items-center justify-center gap-2"
+                  >
+                    🗺 Preview Route in Google Maps ↗
+                  </button>
+                )}
+                <button onClick={handleCreateRoute} disabled={routeLoading || !routeDate || routeStops.length === 0}
+                  className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50">
+                  {routeLoading ? "Creating & Notifying…" : `Create Route & Notify (${routeStops.length} stops)`}
+                </button>
+                <p className="text-xs text-gray-500 text-center mt-2">
+                  This will email each organization on the route.
+                </p>
+              </>
+            )}
+          </section>
+
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-500">Inventory levels across all approved co-op partners.</p>
+            <p className="text-sm text-gray-500">Co-op account sections and inventory levels are separated below.</p>
             <button onClick={() => { fetchBagLevels(); fetchContainerRequests(); }}
               className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻ Refresh</button>
           </div>
@@ -3212,6 +3372,10 @@ export default function AdminPage() {
       {/* ===== ROUTE BUILDER ===== */}
       {isPickupOperations && (
         <div>
+          <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Route Board</p>
+            <p className="text-sm text-blue-900">Route tracking and completion controls are separated from account lists to avoid customer confusion.</p>
+          </div>
           <div className="flex gap-2 mb-4 items-center">
             {[
               { value: "scheduled",   label: "Scheduled" },
@@ -3229,110 +3393,7 @@ export default function AdminPage() {
               </button>
             ))}
             <button onClick={fetchRoutes} className="px-4 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200 text-gray-700">↻</button>
-            <button onClick={() => setBuildingRoute(!buildingRoute)}
-              className="ml-auto bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-5 py-2 rounded-full text-sm transition-colors">
-              {buildingRoute ? "Cancel" : "+ Build Route"}
-            </button>
           </div>
-
-          {/* Route builder */}
-          {buildingRoute && (
-            <div className="border-2 border-nct-gold rounded-xl p-5 mb-6 bg-yellow-50">
-              <h3 className="font-bold text-nct-navy text-lg mb-4">Build Pickup Route</h3>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Pickup Date *</label>
-                  <input type="date" value={routeDate} onChange={(e) => setRouteDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Time (optional)</label>
-                  <input type="time" value={routeTime} onChange={(e) => setRouteTime(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Route Notes</label>
-                  <input type="text" value={routeNotes} onChange={(e) => setRouteNotes(e.target.value)}
-                    placeholder="e.g. Driver: Kyle, Truck #2"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                </div>
-              </div>
-
-              <h4 className="font-semibold text-nct-navy text-sm mb-2">Add Stops</h4>
-              <p className="text-xs text-gray-500 mb-3">Click a service account below to add it to this route. Co-op and discard stops share the same logistics flow here.</p>
-              <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
-                {serviceAccounts
-                  .sort((a, b) => (b.bag_count ?? -1) - (a.bag_count ?? -1))
-                  .map((account) => {
-                    const added = routeStops.find((stop) => stop.enrollment_id === account.enrollment_id);
-                    return (
-                      <div key={account.enrollment_id} className={`flex items-center justify-between border rounded-lg px-3 py-2 text-sm ${added ? "bg-green-50 border-green-300" : "bg-white border-gray-200"}`}>
-                        <div>
-                          <span className="font-medium">{account.org_name}</span>
-                          <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${account.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
-                            {account.program_type === "discard" ? "Discard" : "Co-op"}
-                          </span>
-                          <span className="text-gray-400 ml-2 text-xs">{[account.address_city, account.address_state].filter(Boolean).join(", ")}</span>
-                          {account.pending_request && (
-                            <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">
-                              Requested {account.pending_request.estimated_bags ? `${account.pending_request.estimated_bags} bags` : account.pending_request.estimated_weight_lbs ? `${account.pending_request.estimated_weight_lbs} lbs` : "pickup"}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`font-bold ${bagColor(account.bag_count)}`}>
-                            {account.bag_count ?? "—"} bags
-                          </span>
-                          {added ? (
-                            <button onClick={() => setRouteStops((prev) => prev.filter((stop) => stop.enrollment_id !== account.enrollment_id))}
-                              className="text-xs text-red-600 underline">Remove</button>
-                          ) : (
-                            <button onClick={() => addStop(account)}
-                              className="text-xs bg-nct-navy text-white px-3 py-1 rounded-full">Add</button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-
-              {routeStops.length > 0 && (
-                <div className="mb-4">
-                  <h4 className="font-semibold text-nct-navy text-sm mb-2">Stops on This Route ({routeStops.length})</h4>
-                  {routeStops.map((s, i) => (
-                    <div key={s.enrollment_id} className="flex items-center gap-2 text-sm mb-1">
-                      <span className="w-5 h-5 rounded-full bg-nct-navy text-white flex items-center justify-center text-xs">{i + 1}</span>
-                      <span className="flex-1 font-medium">{s.org_name}</span>
-                      <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${s.program_type === "discard" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
-                        {s.program_type === "discard" ? "Discard" : "Co-op"}
-                      </span>
-                      <input type="number" min="0" value={s.estimated_bags}
-                        onChange={(e) => setRouteStops((prev) => prev.map((stop) => stop.enrollment_id === s.enrollment_id ? { ...stop, estimated_bags: parseInt(e.target.value) || 0 } : stop))}
-                        className="w-16 border border-gray-300 rounded px-2 py-1 text-sm" placeholder="bags" />
-                      <span className="text-xs text-gray-400">bags</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {routeStops.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => openInMaps(routeStops)}
-                  className="w-full mb-3 border-2 border-nct-navy text-nct-navy font-bold py-2.5 rounded-lg hover:bg-nct-navy hover:text-white transition-colors flex items-center justify-center gap-2"
-                >
-                  🗺 Preview Route in Google Maps ↗
-                </button>
-              )}
-              <button onClick={handleCreateRoute} disabled={routeLoading || !routeDate || routeStops.length === 0}
-                className="w-full bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50">
-                {routeLoading ? "Creating & Notifying…" : `Create Route & Notify (${routeStops.length} stops)`}
-              </button>
-              <p className="text-xs text-gray-500 text-center mt-2">
-                This will email each organization on the route.
-              </p>
-            </div>
-          )}
 
           {/* Route list */}
           {loading ? <p className="text-gray-500 text-sm">Loading…</p>
@@ -3408,7 +3469,7 @@ export default function AdminPage() {
                                   <button
                                     onClick={() => {
                                       if (isCompleting) { setCompletingStop(null); setActualBagsInput(""); }
-                                      else { setCompletingStop({ stop_id: s.id, route_id: r.id, org_name: org.org_name }); setActualBagsInput(""); }
+                                        else { setCompletingStop({ stop_id: s.id, route_id: r.id, org_name: org.org_name, nonprofit_id: s.nonprofit_id }); setActualBagsInput(""); }
                                     }}
                                     className="text-xs bg-green-600 hover:bg-green-700 text-white px-2.5 py-1 rounded-lg transition-colors"
                                   >
@@ -3453,6 +3514,16 @@ export default function AdminPage() {
                           🗺 Open in Google Maps ↗
                         </button>
                       )}
+                        {(r.status === "scheduled" || r.status === "in_progress") && (
+                          <a
+                            href="/driver"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs border border-blue-500 text-blue-600 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white transition-colors flex items-center justify-center gap-1"
+                          >
+                            🚛 Driver Portal ↗
+                          </a>
+                        )}
                       {r.status === "scheduled" && (
                         <button onClick={() => handleUpdateRouteStatus(r.id, "in_progress")}
                           className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">

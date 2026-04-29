@@ -179,6 +179,7 @@ export default function DriverPage() {
       route_id: route.id,
       org_name: org.org_name,
       estimated_bags: s.estimated_bags,
+        nonprofit_id: s.nonprofit_id,
     });
     setActualBags("");
     setSanityPrompt(false);
@@ -205,6 +206,7 @@ export default function DriverPage() {
         action: "complete_stop",
         stop_id: completingStop.stop_id,
         route_id: completingStop.route_id,
+          nonprofit_id: completingStop.nonprofit_id,
         actual_bags: bags || null,
       }),
     });
