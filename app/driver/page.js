@@ -78,6 +78,9 @@ export default function DriverPage() {
   const [actualBags, setActualBags] = useState("");
   const [sanityPrompt, setSanityPrompt] = useState(false); // 3x sanity check
   const [noInventoryConfirm, setNoInventoryConfirm] = useState(null); // { stop_id, nonprofit_id, route_id, org_name }
+  const [refusingStop, setRefusingStop] = useState(null); // { stop_id, discard_account_id, org_name }
+  const [refuseNotes, setRefuseNotes] = useState("");
+  const [refusePhotos, setRefusePhotos] = useState([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -250,6 +253,47 @@ export default function DriverPage() {
     setActionLoading(false);
   }
 
+  function startRefusingStop(s, org) {
+    setRefusingStop({
+      stop_id: s.id,
+      discard_account_id: s.discard_account_id,
+      pickup_request_id: s.pickup_request_id || null,
+      org_name: org.org_name,
+    });
+    setRefuseNotes("");
+    setRefusePhotos([]);
+  }
+
+  async function submitRefuseStop() {
+    const stop = refusingStop;
+    if (!stop) return;
+    if (!refuseNotes.trim()) { setMessage("Describe what you saw before refusing the load."); return; }
+    setActionLoading(true);
+    const fd = new FormData();
+    fd.append("discard_account_id", stop.discard_account_id);
+    if (stop.pickup_request_id) fd.append("pickup_request_id", stop.pickup_request_id);
+    fd.append("stop_id", stop.stop_id);
+    fd.append("severity", "rejected");
+    fd.append("notes", refuseNotes);
+    for (const f of refusePhotos) fd.append("photos", f);
+    const res = await fetch("/api/driver/discard-refusals", {
+      method: "POST",
+      headers: { ...authHeader },
+      body: fd,
+    });
+    if (res.ok) {
+      setMessage(`🚩 Load refused at ${stop.org_name}. Partner is being notified per Section 8.`);
+      setRefusingStop(null);
+      setRefuseNotes("");
+      setRefusePhotos([]);
+      await refreshRoute();
+    } else {
+      const json = await res.json().catch(() => ({}));
+      setMessage(`Failed: ${json.error || res.status}`);
+    }
+    setActionLoading(false);
+  }
+
   // ── PIN Screen ──
   if (!authed) {
     return (
@@ -370,6 +414,8 @@ export default function DriverPage() {
             const isDone = s.stop_status === "completed";
             const isCompleting = completingStop?.stop_id === s.id;
             const isNoInventoryPending = noInventoryConfirm?.stop_id === s.id;
+            const isRefusing = refusingStop?.stop_id === s.id;
+            const isDiscard = s.program_type === "discard" && !!s.discard_account_id;
             const addr = [org.address_street, org.address_city, org.address_state].filter(Boolean).join(", ");
             const stopMapsUrl = addr ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}` : null;
 
@@ -439,6 +485,44 @@ export default function DriverPage() {
                           </button>
                         </div>
                       </div>
+                    ) : isRefusing ? (
+                      /* Refuse contaminated load */
+                      <div className="bg-red-50 border border-red-300 rounded-xl p-3 space-y-3">
+                        <p className="text-sm font-bold text-red-900">🚩 Refuse load at {org.org_name}</p>
+                        <p className="text-xs text-red-700">Per Section 8 of the partner agreement, contaminated loads (soiled, wet, pillows/stuffed textiles, etc.) may be refused on-site with no payment.</p>
+                        <textarea
+                          value={refuseNotes}
+                          onChange={(e) => setRefuseNotes(e.target.value)}
+                          placeholder="Describe what you saw (e.g. 6 bags of pillows, 2 bags soaked/moldy)…"
+                          rows={3}
+                          className="w-full border border-red-300 rounded-xl px-3 py-2 text-sm"
+                          autoFocus
+                        />
+                        <div>
+                          <label className="block text-xs font-semibold text-red-900 mb-1">📷 Photo evidence (recommended)</label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            capture="environment"
+                            onChange={(e) => setRefusePhotos(Array.from(e.target.files || []).slice(0, 10))}
+                            className="text-xs w-full"
+                          />
+                          {refusePhotos.length > 0 && (
+                            <p className="text-xs text-red-700 mt-1">{refusePhotos.length} photo{refusePhotos.length === 1 ? "" : "s"} attached</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={submitRefuseStop} disabled={actionLoading || !refuseNotes.trim()}
+                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
+                            {actionLoading ? "Submitting…" : "🚩 Refuse & Notify Partner"}
+                          </button>
+                          <button onClick={() => setRefusingStop(null)}
+                            className="px-4 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl text-sm">
+                            Back
+                          </button>
+                        </div>
+                      </div>
                     ) : isCompleting ? (
                       /* Bag count entry form */
                       <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-3">
@@ -475,20 +559,31 @@ export default function DriverPage() {
                       </div>
                     ) : (
                       /* Default buttons */
-                      <div className="flex gap-2 mt-1">
-                        <button
-                          onClick={() => startCompletingStop(s)}
-                          className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-xl text-sm transition-colors"
-                        >
-                          Complete Stop
-                        </button>
-                        <button
-                          onClick={() => setNoInventoryConfirm({ stop_id: s.id, org_name: org.org_name })}
-                          className="px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-sm transition-colors"
-                          title="No bags available at this location"
-                        >
-                          No Inventory
-                        </button>
+                      <div className="space-y-2 mt-1">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => startCompletingStop(s)}
+                            className="flex-1 bg-nct-navy hover:bg-nct-navy-dark text-white font-bold py-3 rounded-xl text-sm transition-colors"
+                          >
+                            Complete Stop
+                          </button>
+                          <button
+                            onClick={() => setNoInventoryConfirm({ stop_id: s.id, org_name: org.org_name })}
+                            className="px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-sm transition-colors"
+                            title="No bags available at this location"
+                          >
+                            No Inventory
+                          </button>
+                        </div>
+                        {isDiscard && (
+                          <button
+                            onClick={() => startRefusingStop(s, org)}
+                            className="w-full border-2 border-red-300 text-red-700 hover:bg-red-50 font-bold py-2 rounded-xl text-sm transition-colors"
+                            title="Refuse load due to contamination per Section 8"
+                          >
+                            🚩 Refuse — Contaminated
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

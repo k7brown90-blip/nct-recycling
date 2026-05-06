@@ -1,6 +1,29 @@
 import { createServiceClient } from "@/lib/supabase";
 import { createCanonicalDiscardPickup, deleteCanonicalDiscardPickup, getCanonicalDiscardPickups, updateCanonicalDiscardPickup } from "@/lib/discard-canonical";
+import { sendContaminationNotice } from "@/lib/contamination-emails";
 import { NextResponse } from "next/server";
+
+const CONTAMINATION_SEVERITIES = new Set(["none", "minor", "major", "rejected"]);
+
+async function notifyPartnerOfContamination(db, pickupId, accountId, severity) {
+  if (!CONTAMINATION_SEVERITIES.has(severity) || severity === "none") return;
+  try {
+    const [{ data: account }, { data: pickup }, { data: photos }] = await Promise.all([
+      db.from("discard_accounts").select("org_name, contact_name, contact_email").eq("id", accountId).single(),
+      db.from("discard_pickups").select("id, pickup_date, weight_lbs, contamination_severity, contamination_notes, contamination_source").eq("id", pickupId).single(),
+      db.from("discard_pickup_photos").select("storage_bucket, storage_path, original_filename").eq("pickup_id", pickupId),
+    ]);
+    if (!account?.contact_email || !pickup) return;
+    const result = await sendContaminationNotice(db, { account, pickup, photos: photos || [] });
+    if (result.success) {
+      await db.from("discard_pickups").update({ partner_notified_at: new Date().toISOString() }).eq("id", pickupId);
+    } else {
+      console.error("Contamination email failed:", result.error);
+    }
+  } catch (err) {
+    console.error("notifyPartnerOfContamination error:", err);
+  }
+}
 
 function checkAuth(request) {
   return request.headers.get("authorization") === `Bearer ${process.env.ADMIN_SECRET}`;
@@ -63,7 +86,10 @@ export async function POST(request) {
   if (!checkAuth(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const body = await request.json();
-  const { account_id, pickup_date, pickup_time, weight_lbs, load_type, accepted, rejection_reason, notes } = body;
+  const {
+    account_id, pickup_date, pickup_time, weight_lbs, load_type, accepted, rejection_reason, notes,
+    contamination_severity, contamination_notes, contamination_source, contamination_reported_by,
+  } = body;
 
   if (!account_id || !pickup_date || weight_lbs == null) {
     return NextResponse.json({ error: "account_id, pickup_date, and weight_lbs are required." }, { status: 400 });
@@ -80,8 +106,15 @@ export async function POST(request) {
 
   if (acctError || !account) return NextResponse.json({ error: "Account not found." }, { status: 404 });
 
-  const isAccepted = accepted !== false;
+  // Contamination handling: 'rejected' forces accepted=false and voids payment.
+  const severity = CONTAMINATION_SEVERITIES.has(contamination_severity) ? contamination_severity : null;
+  const isContaminated = severity && severity !== "none";
+  const isRejected = severity === "rejected";
+  const isAccepted = isRejected ? false : accepted !== false;
   const amount_owed = isAccepted ? calcPayment(weight_lbs, load_type || "recurring", account) : 0;
+  const finalRejectionReason = !isAccepted
+    ? (rejection_reason || (isRejected ? contamination_notes : null) || null)
+    : null;
 
   const pickupPayload = {
     account_id,
@@ -92,8 +125,14 @@ export async function POST(request) {
     amount_owed,
     payment_status: amount_owed === 0 ? "voided" : "pending",
     accepted: isAccepted,
-    rejection_reason: !isAccepted ? (rejection_reason || null) : null,
+    rejection_reason: finalRejectionReason,
     notes: notes || null,
+    contamination_reported: !!isContaminated,
+    contamination_severity: severity,
+    contamination_notes: isContaminated ? (contamination_notes || null) : null,
+    contamination_reported_at: isContaminated ? new Date().toISOString() : null,
+    contamination_reported_by: isContaminated ? (contamination_reported_by || null) : null,
+    contamination_source: isContaminated ? (contamination_source === "driver" ? "driver" : "admin") : null,
   };
 
   const { data: insertedPickup, error } = await db
@@ -110,7 +149,14 @@ export async function POST(request) {
     console.error("Canonical discard pickup sync error:", canonicalError);
   }
 
-  return NextResponse.json({ success: true, amount_owed });
+  // Fire partner notification email asynchronously (don't block save on email failures).
+  if (isContaminated) {
+    notifyPartnerOfContamination(db, insertedPickup.id, account_id, severity).catch((err) =>
+      console.error("Contamination email dispatch error:", err)
+    );
+  }
+
+  return NextResponse.json({ success: true, id: insertedPickup.id, amount_owed, contaminated: !!isContaminated });
 }
 
 // PATCH — update pickup (mark paid, void, update payment details)
@@ -132,14 +178,49 @@ export async function PATCH(request) {
   if (body.notes           !== undefined) updates.notes           = body.notes           || null;
   if (body.amount_owed     !== undefined) updates.amount_owed     = body.amount_owed;
 
+  // Retroactive contamination flag from admin UI. If 'rejected', auto-void & zero out.
+  let contaminationApplied = null;
+  if (body.contamination_severity !== undefined) {
+    const severity = CONTAMINATION_SEVERITIES.has(body.contamination_severity) ? body.contamination_severity : null;
+    const isContaminated = severity && severity !== "none";
+    updates.contamination_reported = !!isContaminated;
+    updates.contamination_severity = severity;
+    updates.contamination_notes = isContaminated ? (body.contamination_notes || null) : null;
+    updates.contamination_reported_at = isContaminated ? new Date().toISOString() : null;
+    updates.contamination_reported_by = isContaminated ? (body.contamination_reported_by || null) : null;
+    updates.contamination_source = isContaminated ? (body.contamination_source === "driver" ? "driver" : "admin") : null;
+    if (severity === "rejected") {
+      updates.amount_owed = 0;
+      updates.payment_status = "voided";
+      updates.accepted = false;
+      updates.rejection_reason = body.rejection_reason || body.contamination_notes || "Contaminated load — no payment per Section 8.";
+    }
+    contaminationApplied = isContaminated ? severity : null;
+  }
+
   const db = createServiceClient();
-  const { error } = await db.from("discard_pickups").update(updates).eq("id", id);
+  const { data: updatedRow, error } = await db
+    .from("discard_pickups")
+    .update(updates)
+    .eq("id", id)
+    .select("account_id")
+    .single();
   if (error) return NextResponse.json({ error: "Update failed." }, { status: 500 });
 
   try {
     await updateCanonicalDiscardPickup(db, id, updates);
   } catch (canonicalError) {
     console.error("Canonical discard pickup update error:", canonicalError);
+  }
+
+  // Send/resend partner notification when contamination is newly applied or notify_partner is set.
+  if (contaminationApplied || body.notify_partner) {
+    const accountId = updatedRow?.account_id || body.account_id;
+    if (accountId) {
+      notifyPartnerOfContamination(db, id, accountId, contaminationApplied || "rejected").catch((err) =>
+        console.error("Contamination email dispatch error:", err)
+      );
+    }
   }
 
   return NextResponse.json({ success: true });

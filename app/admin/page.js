@@ -337,8 +337,18 @@ export default function AdminPage() {
   const [completePickupForm, setCompletePickupForm] = useState({
     pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring",
     accepted: true, rejection_reason: "", notes: "",
+    contamination_severity: "none", contamination_notes: "",
   });
+  const [completePickupPhotos, setCompletePickupPhotos] = useState([]);
   const [completePickupSaving, setCompletePickupSaving] = useState(false);
+
+  // Retroactive contamination flag on existing pickups + photo viewer state.
+  const [contaminationFlagId, setContaminationFlagId] = useState(null);
+  const [contaminationFlagForm, setContaminationFlagForm] = useState({ severity: "rejected", notes: "" });
+  const [contaminationFlagPhotos, setContaminationFlagPhotos] = useState([]);
+  const [contaminationFlagSaving, setContaminationFlagSaving] = useState(false);
+  const [pickupPhotosCache, setPickupPhotosCache] = useState({}); // { pickupId: [{id, signed_url, original_filename, ...}] }
+  const [pickupPhotosLoading, setPickupPhotosLoading] = useState({});
 
   // Container pickup requests (FL accounts)
   const [containerRequests, setContainerRequests] = useState([]);
@@ -1333,13 +1343,21 @@ export default function AdminPage() {
       accepted: true,
       rejection_reason: "",
       notes: requestRecord.notes ? `From request: ${requestRecord.notes}` : "",
+      contamination_severity: "none",
+      contamination_notes: "",
     });
+    setCompletePickupPhotos([]);
   }
 
   async function handleCompleteRequestWithPickup(e, requestRecord) {
     e.preventDefault();
     if (!selectedDiscard || !completePickupForm.pickup_date) return;
-    if (completePickupForm.accepted && !completePickupForm.weight_lbs) {
+    const isContaminated = completePickupForm.contamination_severity && completePickupForm.contamination_severity !== "none";
+    if (isContaminated && !completePickupForm.contamination_notes.trim()) {
+      setMessage("Describe the contamination before saving.");
+      return;
+    }
+    if (completePickupForm.accepted && completePickupForm.contamination_severity !== "rejected" && !completePickupForm.weight_lbs) {
       setMessage("Enter the weight or mark the load as rejected.");
       return;
     }
@@ -1354,7 +1372,10 @@ export default function AdminPage() {
       body: JSON.stringify({
         account_id: selectedDiscard.id,
         ...completePickupForm,
-        weight_lbs: completePickupForm.accepted ? parseFloat(completePickupForm.weight_lbs) : 0,
+        contamination_source: "admin",
+        weight_lbs: completePickupForm.accepted && completePickupForm.contamination_severity !== "rejected"
+          ? parseFloat(completePickupForm.weight_lbs)
+          : 0,
       }),
     });
     const pickupJson = await pickupRes.json().catch(() => ({}));
@@ -1364,6 +1385,22 @@ export default function AdminPage() {
       return;
     }
 
+    // 1b. Upload contamination photos (if any) to the new pickup id.
+    let photoErrors = [];
+    if (pickupJson.id && completePickupPhotos.length > 0) {
+      const fd = new FormData();
+      fd.append("pickup_id", pickupJson.id);
+      fd.append("source", "admin");
+      for (const file of completePickupPhotos) fd.append("files", file);
+      const photoRes = await fetch("/api/admin/discard-pickup-photos", {
+        method: "POST",
+        headers: { ...authHeader }, // do NOT set Content-Type; browser handles boundary
+        body: fd,
+      });
+      const photoJson = await photoRes.json().catch(() => ({}));
+      if (!photoRes.ok || photoJson.errors) photoErrors = photoJson.errors || ["Photo upload failed."];
+    }
+
     // 2. Mark the request completed (resets bag count, syncs canonical state)
     const updateRes = await fetch("/api/admin/discard-requests", {
       method: "PATCH",
@@ -1371,17 +1408,24 @@ export default function AdminPage() {
       body: JSON.stringify({ id: requestRecord.id, status: "completed" }),
     });
     const updateJson = await updateRes.json().catch(() => ({}));
+    let msg;
     if (!updateRes.ok) {
-      setMessage(`Pickup logged ($${(pickupJson.amount_owed ?? 0).toFixed(2)}), but failed to mark the request completed: ${updateJson.error || "unknown error"}.`);
+      msg = `Pickup logged ($${(pickupJson.amount_owed ?? 0).toFixed(2)}), but failed to mark the request completed: ${updateJson.error || "unknown error"}.`;
+    } else if (pickupJson.contaminated) {
+      msg = `✅ Pickup logged as contaminated (${completePickupForm.contamination_severity}). Partner notified per Section 8. Amount owed: $${(pickupJson.amount_owed ?? 0).toFixed(2)}`;
     } else {
-      setMessage(`✅ Pickup logged. Amount owed: $${(pickupJson.amount_owed ?? 0).toFixed(2)}`);
+      msg = `✅ Pickup logged. Amount owed: $${(pickupJson.amount_owed ?? 0).toFixed(2)}`;
     }
+    if (photoErrors.length) msg += ` Photo issues: ${photoErrors.join("; ")}`;
+    setMessage(msg);
 
     setCompletingRequestId(null);
     setCompletePickupForm({
       pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring",
       accepted: true, rejection_reason: "", notes: "",
+      contamination_severity: "none", contamination_notes: "",
     });
+    setCompletePickupPhotos([]);
     fetchDiscardPickups(selectedDiscard.id);
     fetchDiscardRequests(selectedDiscard.id);
     fetchDiscardBagCount(selectedDiscard.id);
@@ -1515,6 +1559,79 @@ export default function AdminPage() {
     const res = await fetch("/api/admin/discard-pickups", { method: "DELETE", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ id: pickupId }) });
     if (res.ok) { setMessage("Record deleted."); fetchDiscardPickups(selectedDiscard.id); }
     else setMessage("Delete failed.");
+  }
+
+  function handleStartContaminationFlag(pickup) {
+    setContaminationFlagId(pickup.id);
+    setContaminationFlagForm({
+      severity: pickup.contamination_severity || "rejected",
+      notes: pickup.contamination_notes || "",
+    });
+    setContaminationFlagPhotos([]);
+  }
+
+  async function loadPickupPhotos(pickupId) {
+    if (pickupPhotosCache[pickupId] || pickupPhotosLoading[pickupId]) return;
+    setPickupPhotosLoading((prev) => ({ ...prev, [pickupId]: true }));
+    try {
+      const res = await fetch(`/api/admin/discard-pickup-photos?pickup_id=${pickupId}`, { headers: { ...authHeader } });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setPickupPhotosCache((prev) => ({ ...prev, [pickupId]: json.photos || [] }));
+    } finally {
+      setPickupPhotosLoading((prev) => ({ ...prev, [pickupId]: false }));
+    }
+  }
+
+  async function handleSubmitContaminationFlag(e, pickup) {
+    e.preventDefault();
+    if (!contaminationFlagForm.notes.trim()) {
+      setMessage("Describe the contamination before saving.");
+      return;
+    }
+    setContaminationFlagSaving(true);
+    setMessage("");
+
+    // 1. PATCH the pickup with contamination fields. Server will auto-void if 'rejected'.
+    const patchRes = await fetch("/api/admin/discard-pickups", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        id: pickup.id,
+        contamination_severity: contaminationFlagForm.severity,
+        contamination_notes: contaminationFlagForm.notes,
+        contamination_source: "admin",
+        notify_partner: true,
+      }),
+    });
+    if (!patchRes.ok) {
+      const j = await patchRes.json().catch(() => ({}));
+      setMessage(`Error: ${j.error || "Failed to flag pickup."}`);
+      setContaminationFlagSaving(false);
+      return;
+    }
+
+    // 2. Upload any photos.
+    let photoErrors = [];
+    if (contaminationFlagPhotos.length > 0) {
+      const fd = new FormData();
+      fd.append("pickup_id", pickup.id);
+      fd.append("source", "admin");
+      for (const f of contaminationFlagPhotos) fd.append("files", f);
+      const photoRes = await fetch("/api/admin/discard-pickup-photos", {
+        method: "POST",
+        headers: { ...authHeader },
+        body: fd,
+      });
+      const photoJson = await photoRes.json().catch(() => ({}));
+      if (!photoRes.ok || photoJson.errors) photoErrors = photoJson.errors || ["Photo upload failed."];
+    }
+
+    setMessage(`✅ Pickup flagged as ${contaminationFlagForm.severity}. Partner notified.${photoErrors.length ? ` Photo issues: ${photoErrors.join("; ")}` : ""}`);
+    setContaminationFlagId(null);
+    setContaminationFlagPhotos([]);
+    setPickupPhotosCache((prev) => ({ ...prev, [pickup.id]: undefined })); // force refresh
+    fetchDiscardPickups(selectedDiscard.id);
+    setContaminationFlagSaving(false);
   }
 
   async function handleCompleteStop() {
@@ -4962,6 +5079,58 @@ export default function AdminPage() {
                                           onChange={(e) => setCompletePickupForm((p) => ({ ...p, notes: e.target.value }))}
                                           placeholder="Notes (optional)"
                                           className="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+
+                                        {/* Contamination reporting */}
+                                        <div className="rounded border border-orange-200 bg-orange-50 p-2 space-y-2">
+                                          <div className="flex items-center justify-between">
+                                            <p className="text-xs font-bold text-orange-800">🚩 Report Contamination</p>
+                                            <span className="text-[10px] text-orange-700">Section 8 — soiled, hazardous, or non-conforming material</span>
+                                          </div>
+                                          <div className="grid grid-cols-4 gap-1">
+                                            {[
+                                              { val: "none", label: "None", color: "bg-white text-gray-600 border-gray-300" },
+                                              { val: "minor", label: "Minor", color: "bg-yellow-100 text-yellow-800 border-yellow-400" },
+                                              { val: "major", label: "Major", color: "bg-orange-200 text-orange-900 border-orange-500" },
+                                              { val: "rejected", label: "Rejected — no $", color: "bg-red-200 text-red-900 border-red-500" },
+                                            ].map((opt) => {
+                                              const active = completePickupForm.contamination_severity === opt.val;
+                                              return (
+                                                <button key={opt.val} type="button"
+                                                  onClick={() => setCompletePickupForm((p) => ({
+                                                    ...p,
+                                                    contamination_severity: opt.val,
+                                                    accepted: opt.val === "rejected" ? false : p.accepted,
+                                                    rejection_reason: opt.val === "rejected" ? (p.contamination_notes || p.rejection_reason || "Contaminated load — no payment per Section 8.") : p.rejection_reason,
+                                                  }))}
+                                                  className={`text-[11px] font-semibold px-1 py-1 rounded border-2 transition-colors ${active ? opt.color + " ring-2 ring-offset-1 ring-orange-500" : "bg-white text-gray-500 border-gray-200"}`}>
+                                                  {opt.label}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                          {completePickupForm.contamination_severity !== "none" && (
+                                            <>
+                                              <textarea value={completePickupForm.contamination_notes}
+                                                onChange={(e) => setCompletePickupForm((p) => ({ ...p, contamination_notes: e.target.value }))}
+                                                placeholder="Describe the contamination (e.g. wet bags, pillows, mattresses, mold)…"
+                                                rows={2}
+                                                className="w-full border border-orange-300 rounded px-2 py-1 text-xs" />
+                                              <div>
+                                                <label className="text-[11px] text-orange-800 block mb-0.5 font-semibold">Photo evidence (up to 10 · 10MB each)</label>
+                                                <input type="file" accept="image/*" multiple capture="environment"
+                                                  onChange={(e) => setCompletePickupPhotos(Array.from(e.target.files || []).slice(0, 10))}
+                                                  className="text-[11px] w-full" />
+                                                {completePickupPhotos.length > 0 && (
+                                                  <p className="text-[11px] text-orange-700 mt-0.5">{completePickupPhotos.length} file{completePickupPhotos.length === 1 ? "" : "s"} selected</p>
+                                                )}
+                                              </div>
+                                              <p className="text-[11px] text-orange-700">
+                                                Saving will email <strong>{selectedDiscard?.contact_email || "the partner"}</strong> a contamination notice with photo links{completePickupForm.contamination_severity === "rejected" ? " citing Section 8 (no payment)" : ""}.
+                                              </p>
+                                            </>
+                                          )}
+                                        </div>
+
                                         <div className="flex gap-2">
                                           <button type="submit" disabled={completePickupSaving}
                                             className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 rounded transition-colors disabled:opacity-50">
@@ -5098,8 +5267,16 @@ export default function AdminPage() {
                             <p className="text-xs text-gray-400 italic">No pickups logged yet.</p>
                           ) : (
                             <div className="space-y-2">
-                              {discardPickups.map((pu) => (
-                                <div key={pu.id} className={`border rounded-lg p-3 text-sm ${pu.payment_status === "paid" ? "border-green-200 bg-green-50" : pu.payment_status === "voided" ? "border-gray-100 bg-gray-50" : !pu.accepted ? "border-red-100 bg-red-50" : "border-gray-200 bg-white"}`}>
+                              {discardPickups.map((pu) => {
+                                const SEVERITY_STYLES = {
+                                  minor: "bg-yellow-100 text-yellow-800",
+                                  major: "bg-orange-200 text-orange-900",
+                                  rejected: "bg-red-200 text-red-900",
+                                };
+                                const isContaminated = pu.contamination_reported;
+                                const photos = pickupPhotosCache[pu.id];
+                                return (
+                                <div key={pu.id} className={`border rounded-lg p-3 text-sm ${pu.payment_status === "paid" ? "border-green-200 bg-green-50" : isContaminated ? "border-red-200 bg-red-50" : pu.payment_status === "voided" ? "border-gray-100 bg-gray-50" : !pu.accepted ? "border-red-100 bg-red-50" : "border-gray-200 bg-white"}`}>
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-2 flex-wrap">
@@ -5109,13 +5286,19 @@ export default function AdminPage() {
                                         </span>
                                         <span className="text-gray-600">{parseFloat(pu.weight_lbs).toLocaleString()} lbs</span>
                                         <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${
-                                          pu.payment_status === "paid" ? "bg-green-100 text-green-700"
+                                          isContaminated && pu.payment_status === "voided" ? "bg-red-100 text-red-700"
+                                          : pu.payment_status === "paid" ? "bg-green-100 text-green-700"
                                           : pu.payment_status === "voided" ? "bg-gray-100 text-gray-500"
                                           : "bg-yellow-100 text-yellow-700"
                                         }`}>
-                                          {pu.payment_status}
+                                          {isContaminated && pu.payment_status === "voided" ? "Voided — Contaminated" : pu.payment_status}
                                         </span>
-                                        {!pu.accepted && <span className="text-xs bg-red-100 text-red-700 font-semibold px-1.5 py-0.5 rounded-full">Rejected</span>}
+                                        {!pu.accepted && !isContaminated && <span className="text-xs bg-red-100 text-red-700 font-semibold px-1.5 py-0.5 rounded-full">Rejected</span>}
+                                        {isContaminated && (
+                                          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${SEVERITY_STYLES[pu.contamination_severity] || "bg-red-100 text-red-700"}`}>
+                                            🚩 {pu.contamination_severity}{pu.contamination_source === "driver" ? " (driver)" : ""}
+                                          </span>
+                                        )}
                                         {pu.load_type === "single_run" && <span className="text-xs text-gray-400">Ad Hoc</span>}
                                       </div>
                                       <div className="flex items-center gap-3 mt-0.5">
@@ -5127,6 +5310,12 @@ export default function AdminPage() {
                                         {pu.rejection_reason && <span className="text-xs text-red-600">Reason: {pu.rejection_reason}</span>}
                                       </div>
                                       {pu.notes && <p className="text-xs text-gray-400 mt-0.5">{pu.notes}</p>}
+                                      {isContaminated && pu.contamination_notes && (
+                                        <p className="text-xs text-red-700 mt-0.5"><strong>Contamination:</strong> {pu.contamination_notes}</p>
+                                      )}
+                                      {pu.partner_notified_at && (
+                                        <p className="text-[11px] text-gray-400 mt-0.5">Partner notified {new Date(pu.partner_notified_at).toLocaleString()}</p>
+                                      )}
                                     </div>
                                     <div className="flex gap-1.5 shrink-0">
                                       {pu.payment_status === "pending" && (
@@ -5142,10 +5331,91 @@ export default function AdminPage() {
                                           Void
                                         </button>
                                       )}
+                                      <button
+                                        onClick={() => contaminationFlagId === pu.id ? setContaminationFlagId(null) : handleStartContaminationFlag(pu)}
+                                        className={`text-xs px-2 py-1 rounded-lg border transition-colors ${isContaminated ? "border-red-300 text-red-700 hover:bg-red-100" : "border-orange-300 text-orange-700 hover:bg-orange-100"}`}>
+                                        🚩 {contaminationFlagId === pu.id ? "Cancel" : isContaminated ? "Edit" : "Flag"}
+                                      </button>
                                       <button onClick={() => handleDeletePickup(pu.id)}
                                         className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
                                     </div>
                                   </div>
+
+                                  {/* Photo strip for contaminated pickups */}
+                                  {isContaminated && (
+                                    <div className="mt-2 pt-2 border-t border-red-200">
+                                      {!photos && (
+                                        <button type="button" onClick={() => loadPickupPhotos(pu.id)}
+                                          className="text-[11px] text-red-700 underline">
+                                          {pickupPhotosLoading[pu.id] ? "Loading photos…" : "View photo evidence"}
+                                        </button>
+                                      )}
+                                      {photos && photos.length === 0 && (
+                                        <p className="text-[11px] text-gray-400 italic">No photos attached.</p>
+                                      )}
+                                      {photos && photos.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {photos.map((ph) => (
+                                            <a key={ph.id} href={ph.signed_url} target="_blank" rel="noreferrer"
+                                              className="block w-16 h-16 rounded border border-red-200 overflow-hidden bg-white hover:ring-2 hover:ring-red-400 transition-all"
+                                              title={ph.original_filename || "Photo"}>
+                                              {ph.signed_url ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={ph.signed_url} alt={ph.original_filename || "contamination"} className="w-full h-full object-cover" />
+                                              ) : (
+                                                <span className="text-[10px] text-gray-400 flex items-center justify-center h-full">no preview</span>
+                                              )}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Retroactive contamination flag panel */}
+                                  {contaminationFlagId === pu.id && (
+                                    <form onSubmit={(e) => handleSubmitContaminationFlag(e, pu)} className="mt-2 pt-2 border-t border-orange-200 space-y-2">
+                                      <p className="text-xs font-bold text-orange-800">🚩 Flag this pickup as contaminated</p>
+                                      <div className="grid grid-cols-3 gap-1">
+                                        {[
+                                          { val: "minor", label: "Minor" },
+                                          { val: "major", label: "Major" },
+                                          { val: "rejected", label: "Rejected — void $" },
+                                        ].map((opt) => {
+                                          const active = contaminationFlagForm.severity === opt.val;
+                                          return (
+                                            <button key={opt.val} type="button"
+                                              onClick={() => setContaminationFlagForm((p) => ({ ...p, severity: opt.val }))}
+                                              className={`text-[11px] font-semibold px-1 py-1 rounded border-2 transition-colors ${active ? "bg-orange-200 text-orange-900 border-orange-500" : "bg-white text-gray-500 border-gray-200"}`}>
+                                              {opt.label}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                      <textarea value={contaminationFlagForm.notes}
+                                        onChange={(e) => setContaminationFlagForm((p) => ({ ...p, notes: e.target.value }))}
+                                        placeholder="Describe the contamination…"
+                                        rows={2}
+                                        className="w-full border border-orange-300 rounded px-2 py-1 text-xs" />
+                                      <input type="file" accept="image/*" multiple
+                                        onChange={(e) => setContaminationFlagPhotos(Array.from(e.target.files || []).slice(0, 10))}
+                                        className="text-[11px] w-full" />
+                                      {contaminationFlagPhotos.length > 0 && (
+                                        <p className="text-[11px] text-orange-700">{contaminationFlagPhotos.length} file{contaminationFlagPhotos.length === 1 ? "" : "s"} selected</p>
+                                      )}
+                                      <p className="text-[11px] text-orange-700">
+                                        Saving will email the partner a contamination notice{contaminationFlagForm.severity === "rejected" ? " and void payment per Section 8" : ""}.
+                                      </p>
+                                      <div className="flex gap-2">
+                                        <button type="submit" disabled={contaminationFlagSaving}
+                                          className="text-xs bg-orange-600 hover:bg-orange-700 text-white font-bold px-3 py-1 rounded disabled:opacity-50">
+                                          {contaminationFlagSaving ? "Saving…" : "Save & Notify Partner"}
+                                        </button>
+                                        <button type="button" onClick={() => setContaminationFlagId(null)}
+                                          className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded">Cancel</button>
+                                      </div>
+                                    </form>
+                                  )}
 
                                   {/* Mark paid inline panel */}
                                   {markingPaid === pu.id && (
@@ -5169,7 +5439,8 @@ export default function AdminPage() {
                                     </div>
                                   )}
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>
