@@ -34,7 +34,8 @@ export async function GET() {
       business_name: reseller.business_name,
       email: reseller.email,
       status: reseller.status,
-      program_type: reseller.program_type,
+      tier: reseller.tier,
+      wants_warehouse_access: reseller.wants_warehouse_access,
     },
   });
 }

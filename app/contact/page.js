@@ -137,10 +137,10 @@ export default function ContactPage() {
             cta: "How to Shop",
           },
           {
-            title: "Wholesale?",
-            desc: "Bulk bags at $0.30/lb for approved buyers.",
-            href: "/wholesale",
-            cta: "Wholesale Info",
+            title: "Reseller buying?",
+            desc: "Apply for a reseller buyer account — online curated lots, optional warehouse access.",
+            href: "/apply",
+            cta: "Apply to Buy",
           },
         ].map((item) => (
           <div key={item.title} className="bg-gray-50 rounded-xl p-6">

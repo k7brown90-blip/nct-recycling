@@ -73,13 +73,13 @@ const tiers = [
     accent: "border-blue-400",
   },
   {
-    label: "Raw Weight Bags",
-    price: "$0.30 / lb",
+    label: "Reseller Buyer Account",
+    price: "Apply Online",
     icon: "◈",
     description:
-      "Bulk bags sold sight-unseen by weight. Perfect for volume resellers, small thrift stores, and exporters who sort their own inventory.",
-    cta: "Wholesale Info",
-    href: "/wholesale",
+      "Apply once for a reseller account, then shop curated drops in the online reseller store. Optional warehouse access for on-site sorting (admin review required).",
+    cta: "Apply to Buy",
+    href: "/apply",
     accent: "border-green-400",
   },
 ];

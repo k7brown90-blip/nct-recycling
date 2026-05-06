@@ -78,23 +78,23 @@ export default function ShopPage() {
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-gray-50 p-8">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Wholesale Access</p>
-          <h2 className="text-3xl font-bold text-nct-navy mb-4">Need Bulk Buying Support?</h2>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Reseller Buyers</p>
+          <h2 className="text-3xl font-bold text-nct-navy mb-4">Buying for Resale?</h2>
           <p className="text-gray-600 leading-relaxed mb-4">
-            Wholesale buyers can use the online store for curated drops and still reach out for larger recurring needs.
-            The operational model has shifted away from unscheduled route-day shopping windows and toward consistent online inventory release.
+            Apply once for a reseller buyer account. Browse curated drops in the online reseller store, and optionally
+            request on-premises sorting access through the signed Reseller Buyer Agreement.
           </p>
           <ul className="space-y-3 text-sm text-gray-700 mb-6">
+            <li>Online-only buyers are auto-approved &mdash; start shopping right away.</li>
             <li>Curated category drops for common reseller and thrift-store demand.</li>
-            <li>Cleaner lot visibility before purchase.</li>
-            <li>Direct contact path for recurring or higher-volume accounts.</li>
+            <li>Optional warehouse access for on-site sorting (admin review required).</li>
           </ul>
           <div className="flex flex-col sm:flex-row gap-3">
             <Link
-              href="/wholesale"
+              href="/apply"
               className="inline-flex items-center justify-center bg-nct-navy hover:bg-nct-navy-dark text-white font-semibold px-5 py-3 rounded-xl transition-colors"
             >
-              Wholesale Information
+              Apply for a Buyer Account
             </Link>
             <Link
               href="/contact"

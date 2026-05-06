@@ -32,8 +32,13 @@ export default async function ResellerDashboard() {
           <p className="text-lg font-bold text-green-800 capitalize">{reseller?.status || "Approved"}</p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Program</p>
-          <p className="text-sm font-bold text-nct-navy capitalize">{reseller?.program_type || "Reseller"}</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Tier</p>
+          <p className="text-sm font-bold text-nct-navy capitalize">
+            {reseller?.tier === "employee" ? "Employee" : "Public"}
+          </p>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            {reseller?.wants_warehouse_access ? "Warehouse access on file" : "Online buyer"}
+          </p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Since</p>
@@ -52,6 +57,14 @@ export default async function ResellerDashboard() {
         <h2 className="font-bold text-nct-navy mb-3">Agreement on File</h2>
         <dl className="grid grid-cols-2 gap-3 text-sm">
           <div>
+            <dt className="text-gray-500">Agreement</dt>
+            <dd className="font-medium">{reseller?.agreement_version || (reseller?.wants_warehouse_access ? "—" : "Not required (online only)")}</dd>
+          </div>
+          <div>
+            <dt className="text-gray-500">Warehouse access</dt>
+            <dd className="font-medium">{reseller?.wants_warehouse_access ? "Yes" : "No"}</dd>
+          </div>
+          <div>
             <dt className="text-gray-500">Signed as</dt>
             <dd className="font-medium">{reseller?.contract_signed_name || "—"}</dd>
           </div>
@@ -65,12 +78,6 @@ export default async function ResellerDashboard() {
             <div>
               <dt className="text-gray-500">Business</dt>
               <dd className="font-medium">{reseller.business_name}</dd>
-            </div>
-          )}
-          {reseller?.tax_license_number && (
-            <div>
-              <dt className="text-gray-500">CO Tax License</dt>
-              <dd className="font-medium">{reseller.tax_license_number}</dd>
             </div>
           )}
         </dl>

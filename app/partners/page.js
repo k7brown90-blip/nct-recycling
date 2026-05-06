@@ -83,12 +83,8 @@ export default function PartnersPage() {
             {/* Step 3: Three outlets */}
             <div className="flex flex-col gap-3 w-full md:w-48">
               <div className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="font-bold text-sm text-white">🛍 Reseller Sort</p>
-                <p className="text-gray-300 text-xs mt-1">Retail partners sort on-site and keep what they pull.</p>
-              </div>
-              <div className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="font-bold text-sm text-white">📦 Wholesale Bags</p>
-                <p className="text-gray-300 text-xs mt-1">Raw bags sold by weight to volume buyers at $0.30/lb.</p>
+                <p className="font-bold text-sm text-white">🛍 Reseller Buyers</p>
+                <p className="text-gray-300 text-xs mt-1">Approved buyers shop curated drops in the online reseller store; warehouse access available on request.</p>
               </div>
               <div className="bg-white/10 rounded-xl p-3 text-center">
                 <p className="font-bold text-sm text-white">🏪 Bins & Boutique</p>
@@ -219,31 +215,30 @@ export default function PartnersPage() {
       <section className="mb-20" id="retail">
         <div className="flex items-center gap-4 mb-6">
           <div className="flex-1 h-px bg-gray-200"></div>
-          <h2 className="text-2xl font-bold text-nct-navy whitespace-nowrap">Retail Partners</h2>
+          <h2 className="text-2xl font-bold text-nct-navy whitespace-nowrap">Reseller Buyers</h2>
           <div className="flex-1 h-px bg-gray-200"></div>
         </div>
         <p className="text-gray-600 mb-10 max-w-2xl mx-auto text-center text-sm">
-          Approved retail partners get first access to sorted inventory — book a wholesale sort
-          slot to work on-site, or shop the pound bins during reseller hours. Their discards feed
-          the bins. Nothing goes to waste.
+          Approved reseller buyers shop curated drops in the online reseller store and can optionally
+          request on-premises sorting access through the signed Reseller Buyer Agreement.
         </p>
 
         <div className="grid md:grid-cols-3 gap-5 mb-10">
           {[
             {
               icon: "🔑",
-              title: "Approved Access",
-              desc: "Retail partnerships are application-only. Once approved, you book via the reseller portal.",
+              title: "Approved Buyer Account",
+              desc: "Apply for a reseller buyer account. Online-only buyers are auto-approved; warehouse access requires admin review.",
             },
             {
-              icon: "🛍",
-              title: "Wholesale Sort",
-              desc: "Sort on-site from incoming loads. Take everything you pull — $0.30/lb (unopened bags).",
+              icon: "🛒",
+              title: "Online Reseller Store",
+              desc: "Shop curated drops and lots through your authenticated reseller store — no shopping-day reservation required.",
             },
             {
-              icon: "📦",
-              title: "Pound Bins",
-              desc: "Shop pre-sorted bins during reseller hours. Priced at $2.00/lb weighed at checkout.",
+              icon: "🏭",
+              title: "Optional Warehouse Access",
+              desc: "On-premises sorting access available under the Reseller Buyer Agreement. Closed-toe shoes and warehouse rules apply.",
             },
           ].map((item) => (
             <div key={item.title} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm text-center">
@@ -275,8 +270,8 @@ export default function PartnersPage() {
           <div>
             <h3 className="font-bold text-nct-navy mb-1">Reseller Portal — Now Live</h3>
             <p className="text-gray-700 text-sm leading-relaxed mb-3">
-              Approved resellers can view upcoming shopping days, book a wholesale sort or bins slot,
-              and manage their bookings — all without making a phone call.
+              Approved buyers can browse the online reseller store, place orders, and manage their
+              account — all from the portal. Warehouse access is available on request.
             </p>
             <Link
               href="/login"
@@ -292,75 +287,9 @@ export default function PartnersPage() {
             href="/apply"
             className="inline-block bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-8 py-3 rounded transition-colors"
           >
-            Apply to Become a Retail Partner →
+            Apply to Become a Buyer →
           </Link>
           <p className="text-xs text-gray-400 mt-3">Partnerships are approved on a case-by-case basis.</p>
-        </div>
-      </section>
-
-      {/* ── Wholesale Buyers ── */}
-      <section className="mb-20" id="wholesale">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="flex-1 h-px bg-gray-200"></div>
-          <h2 className="text-2xl font-bold text-nct-navy whitespace-nowrap">Wholesale Buyers</h2>
-          <div className="flex-1 h-px bg-gray-200"></div>
-        </div>
-        <p className="text-gray-600 mb-10 max-w-2xl mx-auto text-center text-sm">
-          No application required. Buy raw weight mixed clothing bags directly from our facility.
-          Sight-unseen, bulk, sold by the pound.
-        </p>
-
-        <div className="bg-nct-navy text-white rounded-xl p-8 text-center mb-10">
-          <p className="text-5xl font-bold text-nct-gold mb-2">$0.30</p>
-          <p className="text-xl mb-1">per pound</p>
-          <p className="text-gray-300 text-sm">Raw weight bags · Bulk · Sight-unseen · Mixed clothing</p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-8 mb-10">
-          <div className="text-gray-700 space-y-3 text-sm leading-relaxed">
-            <p>
-              Raw weight bags are unsorted bags sold exactly as they come in from donation intake.
-              You're buying the weight — not a curated selection. Contents are mixed and vary bag to bag.
-            </p>
-            <p>
-              Typical contents include everyday clothing across all categories: men's, women's, kids',
-              shoes, outerwear, denim, and accessories. No guarantees on specific contents, brands, or quality.
-            </p>
-            <p>
-              Colorado sales tax exemption accepted. Bring your <strong>Form DR 0563</strong> or sales tax
-              license number for your first purchase.
-            </p>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-6 text-sm space-y-3">
-            <h3 className="font-bold text-nct-navy mb-3">At a Glance</h3>
-            {[
-              ["Price", "$0.30 per pound"],
-              ["Contents", "Mixed — sight unseen"],
-              ["Availability", "Contact to schedule"],
-              ["Tax Exempt?", "Yes — CO Form DR 0563"],
-              ["Payment", "Cash or card on site"],
-            ].map(([label, value]) => (
-              <div key={label} className="flex justify-between border-b border-gray-200 pb-2 last:border-0 last:pb-0">
-                <span className="text-gray-500">{label}</span>
-                <span className="font-bold text-nct-navy">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <a
-            href="mailto:donate@nctrecycling.com"
-            className="bg-nct-navy hover:bg-nct-navy-dark text-white font-bold px-7 py-3 rounded transition-colors text-center"
-          >
-            Email donate@nctrecycling.com
-          </a>
-          <a
-            href="tel:+19702329108"
-            className="border-2 border-nct-navy text-nct-navy hover:bg-nct-navy hover:text-white font-bold px-7 py-3 rounded transition-colors text-center"
-          >
-            Call (970) 232-9108
-          </a>
         </div>
       </section>
 
@@ -405,7 +334,7 @@ export default function PartnersPage() {
             href="/apply"
             className="bg-nct-gold hover:bg-nct-gold-dark text-white font-bold px-6 py-3 rounded transition-colors"
           >
-            Retail Partner Application →
+            Reseller Buyer Application →
           </Link>
         </div>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">

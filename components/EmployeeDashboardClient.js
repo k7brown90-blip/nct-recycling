@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import EmployeeWorkCalendar from "@/components/EmployeeWorkCalendar";
 import SignOutButton from "@/components/SignOutButton";
 
@@ -150,7 +151,15 @@ export default function EmployeeDashboardClient({ employee, initialSnapshot, ini
             Employee labor state is now live: clock activity and assigned shifts are shown here.
           </p>
         </div>
-        <SignOutButton />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/employee/agreements"
+            className="text-sm font-semibold text-nct-navy border border-nct-navy/30 rounded-lg px-3 py-2 hover:bg-nct-navy/5"
+          >
+            My Agreements
+          </Link>
+          <SignOutButton />
+        </div>
       </div>
 
       {(message || error) && (

@@ -96,8 +96,8 @@ export default function StatusPage() {
               </div>
             )}
             <div className="flex gap-2">
-              <dt className="text-gray-500 w-36 shrink-0">Program:</dt>
-              <dd className="font-medium capitalize">{result.program_type}</dd>
+              <dt className="text-gray-500 w-36 shrink-0">Access:</dt>
+              <dd className="font-medium">{result.wants_warehouse_access ? "Online + warehouse" : "Online only"}</dd>
             </div>
             <div className="flex gap-2">
               <dt className="text-gray-500 w-36 shrink-0">Submitted:</dt>

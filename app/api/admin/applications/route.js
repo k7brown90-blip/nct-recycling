@@ -84,7 +84,7 @@ export async function PATCH(request) {
   // Profile field update
   const PROFILE_FIELDS = [
     "full_name", "business_name", "email", "phone",
-    "program_type", "tax_license_number", "admin_notes",
+    "wants_warehouse_access", "admin_notes",
   ];
   const updates = {};
   for (const key of PROFILE_FIELDS) {

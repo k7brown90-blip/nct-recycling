@@ -12,7 +12,7 @@ export async function GET(request) {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("reseller_applications")
-    .select("id, status, full_name, business_name, program_type, created_at, reviewed_at, admin_notes")
+    .select("id, status, full_name, business_name, wants_warehouse_access, tier, created_at, reviewed_at, admin_notes")
     .eq("email", email)
     .maybeSingle();
 
