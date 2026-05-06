@@ -329,6 +329,17 @@ export default function AdminPage() {
   const [markingPaid, setMarkingPaid] = useState(null); // pickup id being paid
   const [paymentMethod, setPaymentMethod] = useState("");
 
+  // Inline "complete & log pickup" panel for an existing discard request.
+  // Records the actual pickup (weight, payment) and marks the request
+  // completed in a single action — used when a partner calls and the
+  // pickup happens outside the route system.
+  const [completingRequestId, setCompletingRequestId] = useState(null);
+  const [completePickupForm, setCompletePickupForm] = useState({
+    pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring",
+    accepted: true, rejection_reason: "", notes: "",
+  });
+  const [completePickupSaving, setCompletePickupSaving] = useState(false);
+
   // Container pickup requests (FL accounts)
   const [containerRequests, setContainerRequests] = useState([]);
   const [containerLoading, setContainerLoading] = useState(false);
@@ -1310,6 +1321,71 @@ export default function AdminPage() {
       fetchDiscardRequests(selectedDiscard.id);
       fetchDiscardBagCount(selectedDiscard.id);
     } else setMessage(`Error: ${json.error || "Failed to update request."}`);
+  }
+
+  function handleStartCompletePickup(requestRecord) {
+    setCompletingRequestId(requestRecord.id);
+    setCompletePickupForm({
+      pickup_date: requestRecord.scheduled_date || requestRecord.preferred_date || new Date().toISOString().slice(0, 10),
+      pickup_time: "",
+      weight_lbs: requestRecord.estimated_weight_lbs ? String(requestRecord.estimated_weight_lbs) : "",
+      load_type: "recurring",
+      accepted: true,
+      rejection_reason: "",
+      notes: requestRecord.notes ? `From request: ${requestRecord.notes}` : "",
+    });
+  }
+
+  async function handleCompleteRequestWithPickup(e, requestRecord) {
+    e.preventDefault();
+    if (!selectedDiscard || !completePickupForm.pickup_date) return;
+    if (completePickupForm.accepted && !completePickupForm.weight_lbs) {
+      setMessage("Enter the weight or mark the load as rejected.");
+      return;
+    }
+
+    setCompletePickupSaving(true);
+    setMessage("");
+
+    // 1. Log the actual pickup (drives the payment tracker)
+    const pickupRes = await fetch("/api/admin/discard-pickups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        account_id: selectedDiscard.id,
+        ...completePickupForm,
+        weight_lbs: completePickupForm.accepted ? parseFloat(completePickupForm.weight_lbs) : 0,
+      }),
+    });
+    const pickupJson = await pickupRes.json().catch(() => ({}));
+    if (!pickupRes.ok) {
+      setMessage(`Error: ${pickupJson.error || "Failed to log pickup."}`);
+      setCompletePickupSaving(false);
+      return;
+    }
+
+    // 2. Mark the request completed (resets bag count, syncs canonical state)
+    const updateRes = await fetch("/api/admin/discard-requests", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ id: requestRecord.id, status: "completed" }),
+    });
+    const updateJson = await updateRes.json().catch(() => ({}));
+    if (!updateRes.ok) {
+      setMessage(`Pickup logged ($${(pickupJson.amount_owed ?? 0).toFixed(2)}), but failed to mark the request completed: ${updateJson.error || "unknown error"}.`);
+    } else {
+      setMessage(`✅ Pickup logged. Amount owed: $${(pickupJson.amount_owed ?? 0).toFixed(2)}`);
+    }
+
+    setCompletingRequestId(null);
+    setCompletePickupForm({
+      pickup_date: "", pickup_time: "", weight_lbs: "", load_type: "recurring",
+      accepted: true, rejection_reason: "", notes: "",
+    });
+    fetchDiscardPickups(selectedDiscard.id);
+    fetchDiscardRequests(selectedDiscard.id);
+    fetchDiscardBagCount(selectedDiscard.id);
+    setCompletePickupSaving(false);
   }
 
   async function handleScheduleDiscardRequest(requestRecord) {
@@ -4803,9 +4879,17 @@ export default function AdminPage() {
                                               Add to Route
                                             </button>
                                           )}
-                                          <button onClick={() => handleUpdateDiscardRequest(req.id, { status: "completed" })}
+                                          <button onClick={() => completingRequestId === req.id ? setCompletingRequestId(null) : handleStartCompletePickup(req)}
                                             className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition-colors">
-                                            Complete
+                                            {completingRequestId === req.id ? "Cancel" : "Complete & Log Pickup"}
+                                          </button>
+                                          <button onClick={() => {
+                                            if (!confirm("Mark this request completed without recording a pickup? Use this only if the load was rejected or the partner cancelled after pickup.")) return;
+                                            handleUpdateDiscardRequest(req.id, { status: "completed" });
+                                          }}
+                                            className="text-xs text-gray-500 hover:text-gray-700 underline px-1"
+                                            title="Mark completed without recording a pickup">
+                                            No pickup
                                           </button>
                                           <button onClick={() => handleUpdateDiscardRequest(req.id, { status: "cancelled" })}
                                             className="text-xs bg-gray-400 text-white px-2 py-1 rounded hover:bg-gray-500 transition-colors">
@@ -4814,6 +4898,82 @@ export default function AdminPage() {
                                         </div>
                                       )}
                                     </div>
+
+                                    {/* Inline complete-and-log form */}
+                                    {completingRequestId === req.id && (
+                                      <form onSubmit={(e) => handleCompleteRequestWithPickup(e, req)} className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+                                        <p className="text-xs font-semibold text-green-700">Log the actual pickup so it flows into the payment tracker.</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="text-xs text-gray-500 block mb-0.5">Pickup Date *</label>
+                                            <input type="date" required value={completePickupForm.pickup_date}
+                                              onChange={(e) => setCompletePickupForm((p) => ({ ...p, pickup_date: e.target.value }))}
+                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+                                          </div>
+                                          <div>
+                                            <label className="text-xs text-gray-500 block mb-0.5">Pickup Time</label>
+                                            <input type="time" value={completePickupForm.pickup_time}
+                                              onChange={(e) => setCompletePickupForm((p) => ({ ...p, pickup_time: e.target.value }))}
+                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+                                          </div>
+                                          <div>
+                                            <label className="text-xs text-gray-500 block mb-0.5">Weight (lbs) {completePickupForm.accepted ? "*" : ""}</label>
+                                            <input type="number" min="0" step="0.1"
+                                              required={completePickupForm.accepted}
+                                              disabled={!completePickupForm.accepted}
+                                              value={completePickupForm.weight_lbs}
+                                              onChange={(e) => setCompletePickupForm((p) => ({ ...p, weight_lbs: e.target.value }))}
+                                              placeholder="e.g. 3500"
+                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm disabled:bg-gray-100" />
+                                            {completePickupForm.accepted && completePickupForm.weight_lbs && (
+                                              <p className="text-xs text-green-600 mt-0.5 font-medium">
+                                                Est. owed: ${calcDiscardPayment(completePickupForm.weight_lbs, completePickupForm.load_type, selectedDiscard).toFixed(2)}
+                                              </p>
+                                            )}
+                                          </div>
+                                          <div>
+                                            <label className="text-xs text-gray-500 block mb-0.5">Load Type</label>
+                                            <select value={completePickupForm.load_type}
+                                              onChange={(e) => setCompletePickupForm((p) => ({ ...p, load_type: e.target.value }))}
+                                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                                              <option value="recurring">Recurring</option>
+                                              <option value="single_run">Single Run (Ad Hoc)</option>
+                                            </select>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <label className="text-xs font-medium text-gray-600">Load Accepted?</label>
+                                          <div className="flex gap-1">
+                                            <button type="button"
+                                              onClick={() => setCompletePickupForm((p) => ({ ...p, accepted: true, rejection_reason: "" }))}
+                                              className={`text-xs font-bold px-2 py-1 rounded border transition-colors ${completePickupForm.accepted ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300"}`}>Yes</button>
+                                            <button type="button"
+                                              onClick={() => setCompletePickupForm((p) => ({ ...p, accepted: false }))}
+                                              className={`text-xs font-bold px-2 py-1 rounded border transition-colors ${!completePickupForm.accepted ? "bg-red-600 text-white border-red-600" : "bg-white text-gray-600 border-gray-300"}`}>No</button>
+                                          </div>
+                                        </div>
+                                        {!completePickupForm.accepted && (
+                                          <input type="text" value={completePickupForm.rejection_reason}
+                                            onChange={(e) => setCompletePickupForm((p) => ({ ...p, rejection_reason: e.target.value }))}
+                                            placeholder="Rejection reason"
+                                            className="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+                                        )}
+                                        <input type="text" value={completePickupForm.notes}
+                                          onChange={(e) => setCompletePickupForm((p) => ({ ...p, notes: e.target.value }))}
+                                          placeholder="Notes (optional)"
+                                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+                                        <div className="flex gap-2">
+                                          <button type="submit" disabled={completePickupSaving}
+                                            className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 rounded transition-colors disabled:opacity-50">
+                                            {completePickupSaving ? "Saving…" : "Save Pickup & Mark Completed"}
+                                          </button>
+                                          <button type="button" onClick={() => setCompletingRequestId(null)}
+                                            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded transition-colors">
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </form>
+                                    )}
                                   </div>
                                 );
                               })}
