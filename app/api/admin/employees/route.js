@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase";
 import { upsertProfileRecord } from "@/lib/auth-profile";
+import { buildActivateUrl } from "@/lib/auth-confirm-url";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
@@ -19,11 +20,13 @@ function buildAdminClient() {
 }
 
 function getEmployeeRedirectTo() {
-  return `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/auth/update-password%3Fwelcome%3Dtrue`;
+  return `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`;
 }
 
-function buildEmployeeActivateUrl(actionLink) {
-  return `${process.env.NEXT_PUBLIC_SITE_URL}/auth/activate?link=${encodeURIComponent(actionLink)}`;
+function buildEmployeeActivateUrl(properties) {
+  return buildActivateUrl(properties, {
+    next: "/auth/update-password?welcome=true",
+  });
 }
 
 async function sendEmployeeInviteEmail({ email, displayName, activateUrl, isResend = false }) {
@@ -175,7 +178,7 @@ export async function POST(request) {
     return NextResponse.json({ error: employeeError.message }, { status: 500 });
   }
 
-  const activateUrl = buildEmployeeActivateUrl(linkData.properties.action_link);
+  const activateUrl = buildEmployeeActivateUrl(linkData.properties);
 
   const { error: emailError } = await sendEmployeeInviteEmail({
     email,
@@ -232,11 +235,11 @@ export async function PATCH(request) {
     options: { redirectTo },
   });
 
-  if (recoveryError || !recoveryData?.properties?.action_link) {
+  if (recoveryError || !recoveryData?.properties?.hashed_token) {
     return NextResponse.json({ error: recoveryError?.message || "Failed to generate a fresh invite link." }, { status: 500 });
   }
 
-  const activateUrl = buildEmployeeActivateUrl(recoveryData.properties.action_link);
+  const activateUrl = buildEmployeeActivateUrl(recoveryData.properties);
   const { error: emailError } = await sendEmployeeInviteEmail({
     email: employee.work_email,
     displayName: employee.display_name,

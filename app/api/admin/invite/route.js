@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase";
 import { upsertProfileRecord } from "@/lib/auth-profile";
 import { syncCanonicalCoOpAdminState } from "@/lib/canonical-organizations";
+import { buildActivateUrl } from "@/lib/auth-confirm-url";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
@@ -28,7 +29,7 @@ export async function POST(request) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/auth/update-password%3Fwelcome%3Dtrue`;
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`;
 
   // Try to generate an invite link first
   let linkData;
@@ -105,8 +106,12 @@ export async function POST(request) {
   const greeting = full_name ? `Hi ${full_name},` : "Hi,";
 
   // Route through our own landing page so email security scanners don't
-  // consume the one-time Supabase token before the user clicks it.
-  const activateUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/activate?link=${encodeURIComponent(linkData.properties.action_link)}`;
+  // consume the one-time Supabase token before the user clicks it. We embed
+  // the hashed_token directly so /auth/confirm can verify it server-side via
+  // verifyOtp (works without a PKCE code_verifier cookie).
+  const activateUrl = buildActivateUrl(linkData.properties, {
+    next: "/auth/update-password?welcome=true",
+  });
 
   // Send branded invite email via Resend
   const { error: emailError } = await resend.emails.send({

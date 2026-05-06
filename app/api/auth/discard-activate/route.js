@@ -3,6 +3,7 @@ import { upsertCanonicalSignedAgreementDocument, getDiscardAgreementStoragePath 
 import { upsertProfileRecord } from "@/lib/auth-profile";
 import { generateDiscardAgreementPDF } from "@/lib/discard-agreement";
 import { syncDiscardAccountToCanonical } from "@/lib/discard-canonical";
+import { buildConfirmUrl } from "@/lib/auth-confirm-url";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
@@ -96,9 +97,9 @@ export async function POST(request) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/auth/update-password%3Fwelcome%3Dtrue`;
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`;
 
-  let actionLink;
+  let linkProperties;
 
   if (!account.user_id) {
     // New user — generate an invite link (creates the user in Supabase auth)
@@ -119,11 +120,11 @@ export async function POST(request) {
         discard_account_id: account.id,
       }, db);
       await db.from("discard_accounts").update({ user_id: inviteData.user.id }).eq("id", account.id);
-      actionLink = inviteData.properties.action_link;
+      linkProperties = inviteData.properties;
     }
   }
 
-  if (!actionLink) {
+  if (!linkProperties) {
     // User already exists (either we just found out, or user_id was already set) — use magiclink
     const { data: magicData, error: magicError } = await adminClient.auth.admin.generateLink({
       type: "magiclink",
@@ -143,8 +144,14 @@ export async function POST(request) {
       discard_account_id: account.id,
     }, db);
     await db.from("discard_accounts").update({ user_id: magicData.user.id }).eq("id", account.id);
-    actionLink = magicData.properties.action_link;
+    linkProperties = magicData.properties;
   }
 
-  return NextResponse.json({ link: actionLink });
+  // Return a /auth/confirm URL that redeems the token via verifyOtp
+  // server-side. The activate page navigates the browser straight there.
+  const confirmUrl = buildConfirmUrl(linkProperties, {
+    next: "/auth/update-password?welcome=true",
+  });
+
+  return NextResponse.json({ link: confirmUrl });
 }

@@ -43,12 +43,17 @@ function UpdatePasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isWelcome = searchParams.get("welcome") === "true";
+  const linkErrorParam = searchParams.get("error");
   const [supabase] = useState(() => createClient());
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
-  const [linkError, setLinkError] = useState("");
+  const [linkError, setLinkError] = useState(
+    linkErrorParam === "link_expired"
+      ? "This link has expired or has already been used. Please request a new one."
+      : ""
+  );
   const [verificationIssue, setVerificationIssue] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
@@ -56,6 +61,12 @@ function UpdatePasswordForm() {
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    if (linkErrorParam === "link_expired") {
+      // The /auth/confirm route already determined this token is unusable.
+      // Don't even try to resolve a session — show the failure state directly.
+      return;
+    }
+
     let settled = false;
 
     setSessionReady(false);
@@ -117,7 +128,7 @@ function UpdatePasswordForm() {
       subscription.unsubscribe();
       clearTimeout(timeout);
     };
-  }, [retryCount, supabase]);
+  }, [retryCount, supabase, linkErrorParam]);
 
   function handleRetryVerification() {
     setRetryCount((count) => count + 1);

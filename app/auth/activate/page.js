@@ -6,7 +6,9 @@ import Image from "next/image";
 
 function ActivateContent() {
   const params = useSearchParams();
-  const link = params.get("link");
+  const tokenHash = params.get("token_hash");
+  const tokenType = params.get("type");
+  const next = params.get("next");
   const discardToken = params.get("discard_token");
   const [clicked, setClicked] = useState(false);
   const [error, setError] = useState("");
@@ -49,8 +51,8 @@ function ActivateContent() {
     };
   }, [discardToken]);
 
-  // Detect link type from the encoded Supabase URL (legacy co-op/reseller flow)
-  const isRecovery = link?.includes("type=recovery");
+  // Detect link type from the verification type query param.
+  const isRecovery = tokenType === "recovery";
 
   async function handleDiscardActivate() {
     if (!acceptedTerms) {
@@ -160,8 +162,8 @@ function ActivateContent() {
     );
   }
 
-  // ── Legacy flow: Supabase link is in the URL (co-op / reseller invites) ──
-  if (!link) {
+  // ── Standard invite/recovery flow: redeem the token via /auth/confirm ──
+  if (!tokenHash || !tokenType) {
     return (
       <div className="text-center">
         <p className="text-red-600 font-semibold mb-4">Invalid activation link.</p>
@@ -182,7 +184,11 @@ function ActivateContent() {
 
   function handleActivate() {
     setClicked(true);
-    window.location.href = link;
+    const url = new URL("/auth/confirm", window.location.origin);
+    url.searchParams.set("token_hash", tokenHash);
+    url.searchParams.set("type", tokenType);
+    if (next) url.searchParams.set("next", next);
+    window.location.href = url.toString();
   }
 
   return (

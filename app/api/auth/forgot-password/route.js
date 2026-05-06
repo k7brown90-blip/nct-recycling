@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
+import { buildActivateUrl } from "@/lib/auth-confirm-url";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -14,7 +15,7 @@ export async function POST(request) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/auth/update-password`;
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`;
 
   const { data, error } = await adminClient.auth.admin.generateLink({
     type: "recovery",
@@ -23,12 +24,14 @@ export async function POST(request) {
   });
 
   // Always return success — don't reveal whether an account exists
-  if (error || !data?.properties?.action_link) {
+  if (error || !data?.properties?.hashed_token) {
     return NextResponse.json({ success: true });
   }
 
   // Route through our activate page so email scanners can't consume the token
-  const activateUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/activate?link=${encodeURIComponent(data.properties.action_link)}`;
+  const activateUrl = buildActivateUrl(data.properties, {
+    next: "/auth/update-password",
+  });
 
   await resend.emails.send({
     from: "NCT Recycling <noreply@nctrecycling.com>",
