@@ -35,9 +35,17 @@ export async function POST(request) {
     ? { ...(user.user_metadata || {}), setup_required: false }
     : user.user_metadata || {};
 
+  // Auto-confirm the email when setting a password via this server-validated
+  // flow. The caller already proved control of the email by holding a valid
+  // invite/recovery access token (verified above with getUser). Without this,
+  // users who land on the update-password page via a fragment-based
+  // access_token (instead of /auth/confirm) end up with a password but
+  // email_confirmed_at = NULL, so signInWithPassword fails with
+  // "Email not confirmed" and they cannot log in.
   const { error: updateError } = await adminClient.auth.admin.updateUserById(user.id, {
     password,
     user_metadata: metadata,
+    email_confirm: true,
   });
 
   if (updateError) {
