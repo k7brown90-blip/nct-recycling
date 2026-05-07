@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import Link from "next/link";
@@ -15,6 +15,25 @@ function LoginPageContent() {
   const requestedNext = searchParams.get("next");
   const nextPath = requestedNext && requestedNext.startsWith("/") ? requestedNext : "/dashboard";
 
+  // If the visitor is already signed in, send them straight to their portal.
+  // Without this, signed-in users who click the navbar "Login" link would see
+  // the login form a second time and feel like the site is unresponsive.
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      if (data?.user) {
+        router.replace(nextPath);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [router, nextPath]);
+
   async function handleLogin(e) {
     e.preventDefault();
     setLoading(true);
@@ -24,7 +43,12 @@ function LoginPageContent() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setError("Invalid email or password.");
+      const message = String(error.message || "").toLowerCase();
+      if (message.includes("not confirmed") || message.includes("confirm")) {
+        setError("Your email has not been confirmed yet. Check your invite email and click the activation link, or contact donate@nctrecycling.com.");
+      } else {
+        setError("Invalid email or password.");
+      }
       setLoading(false);
       return;
     }

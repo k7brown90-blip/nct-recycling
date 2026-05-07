@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
+import { createClient } from "@/lib/supabase-browser";
 
 const navLinks = [
   { href: "/shop", label: "Shop" },
@@ -11,8 +13,11 @@ const navLinks = [
 ];
 
 export default function Navbar() {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
+  const [authedUser, setAuthedUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const applyRef = useRef(null);
 
   useEffect(() => {
@@ -24,6 +29,35 @@ export default function Navbar() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setAuthedUser(data?.user || null);
+      setAuthReady(true);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthedUser(session?.user || null);
+      setAuthReady(true);
+    });
+
+    return () => {
+      active = false;
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setMenuOpen(false);
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <nav className="bg-nct-navy text-white sticky top-0 z-50 shadow-lg">
@@ -89,18 +123,37 @@ export default function Navbar() {
           </div>
 
           <Link
-            href="/login"
-            className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors border border-white/30 px-3 py-2 rounded"
-          >
-            Login
-          </Link>
-
-          <Link
             href="/donate"
             className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded transition-colors whitespace-nowrap"
           >
             Donate Now
           </Link>
+
+          {authReady && (
+            authedUser ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className="text-sm font-medium text-white bg-white/10 hover:bg-nct-gold hover:text-white border border-white/30 px-3 py-2 rounded transition-colors whitespace-nowrap"
+                >
+                  My Portal
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors border border-white/30 px-3 py-2 rounded"
+              >
+                Login
+              </Link>
+            )
+          )}
         </div>
 
         {/* Mobile hamburger */}
@@ -146,19 +199,40 @@ export default function Navbar() {
             </Link>
           </div>
           <Link
-            href="/login"
-            className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors border border-white/30 px-3 py-2 rounded text-center"
-            onClick={() => setMenuOpen(false)}
-          >
-            Login
-          </Link>
-          <Link
             href="/donate"
             className="bg-nct-gold hover:bg-nct-gold-dark text-white text-sm font-bold px-4 py-2 rounded text-center transition-colors"
             onClick={() => setMenuOpen(false)}
           >
             Donate Now
           </Link>
+
+          {authReady && (
+            authedUser ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className="text-sm font-medium text-white bg-white/10 border border-white/30 px-3 py-2 rounded text-center transition-colors hover:bg-nct-gold"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  My Portal
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors text-center"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="text-sm font-medium text-gray-200 hover:text-nct-gold transition-colors border border-white/30 px-3 py-2 rounded text-center"
+                onClick={() => setMenuOpen(false)}
+              >
+                Login
+              </Link>
+            )
+          )}
         </div>
       )}
     </nav>

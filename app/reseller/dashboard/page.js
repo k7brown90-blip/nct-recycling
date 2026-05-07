@@ -52,6 +52,42 @@ export default async function ResellerDashboard() {
         <ResellerStoreSummary />
       </div>
 
+      {/* Getting started guide */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-5">
+        <h2 className="font-bold text-nct-navy mb-2">Getting Started</h2>
+        <p className="text-sm text-gray-700 mb-3">
+          Welcome to your NCT reseller portal. Here is how to use it:
+        </p>
+        <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside">
+          <li>
+            <span className="font-semibold text-nct-navy">Open the reseller store</span> to browse curated lots and current inventory.
+          </li>
+          <li>
+            <span className="font-semibold text-nct-navy">Add items to your cart</span>, then open the cart to review and create your order.
+          </li>
+          <li>
+            <span className="font-semibold text-nct-navy">Pay securely</span> through the Shopify checkout link we generate for your order.
+          </li>
+          <li>
+            <span className="font-semibold text-nct-navy">Track your order</span> from the Order History page anytime.
+          </li>
+        </ol>
+        <div className="flex flex-wrap gap-3 mt-4">
+          <Link href="/reseller/store" className="inline-flex items-center justify-center bg-nct-navy hover:bg-nct-navy-dark text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors">
+            Open Reseller Store
+          </Link>
+          <Link href="/reseller/store/cart" className="inline-flex items-center justify-center border border-nct-navy text-nct-navy hover:bg-nct-navy hover:text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors">
+            View Cart
+          </Link>
+          <Link href="/reseller/store/orders" className="inline-flex items-center justify-center border border-nct-navy text-nct-navy hover:bg-nct-navy hover:text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors">
+            Order History
+          </Link>
+          <a href="mailto:donate@nctrecycling.com" className="inline-flex items-center justify-center text-sm font-semibold text-nct-navy underline px-2 py-2.5">
+            Need help? Email us
+          </a>
+        </div>
+      </div>
+
       {/* Agreement on file */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
         <h2 className="font-bold text-nct-navy mb-3">Agreement on File</h2>
