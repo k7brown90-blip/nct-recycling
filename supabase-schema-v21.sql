@@ -25,7 +25,7 @@ end$$;
 
 alter table agreement_templates
   add constraint agreement_templates_program_type_check
-  check (program_type in ('co_op', 'discard', 'reseller'));
+  check (program_type in ('co_op', 'discard', 'reseller', 'employment'));
 
 -- ---------------------------------------------------------------
 -- 2. Seed Reseller Buyer Agreement (buyer_v1)
