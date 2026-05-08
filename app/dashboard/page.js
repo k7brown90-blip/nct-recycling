@@ -13,17 +13,27 @@ export default async function DashboardPage() {
   const db = createServiceClient();
   const profile = await getOrCreateProfile(user, db);
 
-  if (profile?.role === "nonprofit") redirect("/nonprofit/dashboard");
-  if (profile?.role === "reseller" || profile?.role === "both") redirect("/reseller/dashboard");
-  if (profile?.role === "discard") redirect("/discard/dashboard");
-  if (profile?.role === "employee") redirect("/employee");
+  // Only forward to a role-specific dashboard when the profile has the
+  // linkage that dashboard requires. Otherwise we'd ping-pong between
+  // /dashboard and the role dashboard (which redirects back here when it
+  // can't find its underlying record).
+  const role = profile?.role;
+  const hasAppLink = Boolean(profile?.application_id);
+  const hasDiscardLink = Boolean(profile?.discard_account_id);
 
-  // No profile yet — show a holding page
+  if (role === "nonprofit" && hasAppLink) redirect("/nonprofit/dashboard");
+  if ((role === "reseller" || role === "both") && hasAppLink) redirect("/reseller/dashboard");
+  if (role === "discard" && hasDiscardLink) redirect("/discard/dashboard");
+  if (role === "employee") redirect("/employee");
+
+  // No profile yet, or profile is missing its linkage — show a holding page.
   return (
     <main className="max-w-xl mx-auto px-4 py-20 text-center">
       <h1 className="text-2xl font-bold text-nct-navy mb-4">Welcome</h1>
       <p className="text-gray-600">
-        Your account is being set up. Please contact us if you need assistance.
+        {role
+          ? "We could not find your partner record linked to this login. Please contact us so we can finish setting up your account."
+          : "Your account is being set up. Please contact us if you need assistance."}
       </p>
       <p className="mt-4">
         <a href="mailto:donate@nctrecycling.com" className="text-nct-navy underline">
