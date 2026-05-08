@@ -15,7 +15,7 @@ const STATUS_COLORS = {
   in_progress: "bg-purple-100 text-purple-800",
 };
 
-const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Payroll Export", "Reseller Apps", "Co-op Apps", "Pickup Accounts", "Scheduling", "Exchange Appts", "Online Store", "Donation Lots", "Emails"];
+const SECTIONS = ["Dashboard", "Employees", "Work Calendar", "Time Review", "Payroll Export", "Reseller Apps", "Co-op Apps", "Discard Accounts", "Pickup Accounts", "Scheduling", "Exchange Appts", "Online Store", "Donation Lots", "Emails"];
 
 // Bag weight constants — 55-gal bag ≈ 20 lbs (LTL accounts only)
 const LBS_PER_BAG = 20;
@@ -369,6 +369,7 @@ export default function AdminPage() {
 
   const isPickupAccounts = section === "Pickup Accounts";
   const isScheduling = section === "Scheduling";
+  const isDiscardAccounts = section === "Discard Accounts";
   const isPickupOperations = isPickupAccounts || isScheduling;
   const isNonprofit = section === "Co-op Apps";
   const apiPath = isNonprofit ? "/api/admin/nonprofit-applications" : "/api/admin/applications";
@@ -646,6 +647,7 @@ export default function AdminPage() {
     if (section === "Payroll Export") fetchPayrollExports();
     if (section === "Reseller Apps" || section === "Co-op Apps") fetchApplications();
     if (section === "Pickup Accounts" || section === "Scheduling") { fetchBagLevels(); fetchContainerRequests(); fetchRoutes(); fetchDiscardAccounts(); }
+    if (section === "Discard Accounts") fetchDiscardAccounts();
     if (section === "Exchange Appts") fetchAppointments();
     if (section === "Online Store") fetchShoppingDays();
     if (section === "Donation Lots") fetchLots();
@@ -691,7 +693,8 @@ export default function AdminPage() {
   }, [selectedDiscard?.id, fetchDiscardPickups, fetchDiscardRequests, fetchDiscardBagCount]);
 
   useEffect(() => {
-    if (section !== "Pickup Accounts" || !pendingDiscardFocusId || discardAccounts.length === 0) return;
+    if (section !== "Pickup Accounts" && section !== "Discard Accounts") return;
+    if (!pendingDiscardFocusId || discardAccounts.length === 0) return;
 
     const target = discardAccounts.find((acct) => acct.id === pendingDiscardFocusId);
     if (!target) return;
@@ -1261,12 +1264,12 @@ export default function AdminPage() {
 
   function handleOpenDiscardAccount(accountId) {
     if (!accountId) {
-      setSection("Pickup Accounts");
+      setSection("Discard Accounts");
       return;
     }
 
     setPendingDiscardFocusId(accountId);
-    setSection("Pickup Accounts");
+    setSection("Discard Accounts");
   }
 
   async function handleViewDiscardAgreement(accountId) {
@@ -4473,8 +4476,24 @@ export default function AdminPage() {
         </div>
       )}
       {/* ===== DISCARD ACCOUNTS ===== */}
-      {isPickupAccounts && (
+      {isDiscardAccounts && (
         <div>
+          <div className="mb-6 rounded-2xl border border-nct-gold/30 bg-gradient-to-r from-amber-50 via-white to-blue-50 p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-nct-gold">Discard Accounts</p>
+                <h2 className="mt-1 text-2xl font-bold text-nct-navy">Create accounts, record agreements, and manage discard partners.</h2>
+                <p className="mt-2 max-w-3xl text-sm text-gray-600">Use this tab to create new discard purchase accounts, send invites, capture signed agreements, and edit account details. Pickup logistics and route building happen in the Pickup Accounts and Scheduling tabs.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Active Accounts</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-700">{discardAccounts.length}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-500">Organizations that sell discard directly instead of joining the co-op.</p>
             <div className="flex gap-2">
